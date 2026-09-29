@@ -3,12 +3,8 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters
 from groq import Groq
 
-# Deine Keys werden gleich sicher auf dem Server hinterlegt
-TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
-
-# Groq Klient initialisieren
-client = Groq(api_key=GROQ_API_KEY)
+# Groq Client initialisieren
+client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_message = update.message.text
@@ -17,12 +13,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_completion = client.chat.completions.create(
         messages=[
             {
+                "role": "system",
+                "content": "Du bist Heiko, ein hilfsbereiter Schwäbischer, cooler und lockerer KI-Assistent. Antworte immer auf Deutsch und stelle dich bei Bedarf as Heiko vor."
+            },
+            {
                 "role": "user",
-                "content": user_message,
+                "content": user_message
             }
         ],
-        model="qwen/qwen3.8-27b",
-        max_tokens=500,
+        model="qwen/qwen2.5-72b",
     )
     
     # Antwort von der KI extrahieren
@@ -32,9 +31,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(bot_reply)
 
 if __name__ == "__main__":
+    TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
     
-    # Auf alle Textnachrichten reagieren
+    # Nachricht-Handler hinzufügen
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
     
     print("Bot läuft...")
