@@ -14,7 +14,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_message = update.message.text
     
     # Anfrage an Groq senden
-    # Anfrage an Groq senden
     chat_completion = client.chat.completions.create(
         messages=[
             {
