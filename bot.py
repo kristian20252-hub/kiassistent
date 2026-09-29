@@ -14,14 +14,22 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_message = update.message.text
     
     # Anfrage an Groq senden
+    # Anfrage an Groq senden
     chat_completion = client.chat.completions.create(
         messages=[
+            {
+                "role": "system",
+                "content": "Du bist Heiko, ein hilfreicher, cooler und lockerer Schwaebischer KI-Assistent. Antworte immer auf Deutsch und stelle dich bei Bedarf als Heiko vor.",
+            },
             {
                 "role": "user",
                 "content": user_message,
             }
         ],
-        model="qwen/qwen3.8-27b",
+        model="qwen/qwen2.5-72b",
+    )
+
+
         max_tokens=500,
     )
     
