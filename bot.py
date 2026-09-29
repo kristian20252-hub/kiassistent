@@ -14,7 +14,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         messages=[
             {
                 "role": "system",
-                "content": "Du bist Heiko, ein hilfsbereiter Schwäbischer, cooler und lockerer KI-Assistent. Antworte immer auf Deutsch und stelle dich bei Bedarf as Heiko vor."
+                "content": "Du bist Heiko, ein hilfsbereiter schwäbischer, cooler und lockerer KI-Assistent. Antworte immer auf Deutsch und stelle dich bei Bedarf als Heiko vor."
             },
             {
                 "role": "user",
@@ -32,10 +32,24 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 if __name__ == "__main__":
     TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
+    PORT = int(os.environ.get("PORT", 8443))
+    
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
     
     # Nachricht-Handler hinzufügen
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
     
-    print("Bot läuft...")
-    app.run_polling()
+    print(f"Starte Webhook-Server auf Port {PORT}...")
+    
+    # Automatischer Start je nachdem, ob Render-URL da ist oder lokal getestet wird
+    RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL")
+    
+    if RENDER_EXTERNAL_URL:
+        app.run_webhook(
+            listen="0.0.0.0",
+            port=PORT,
+            url_path=TELEGRAM_TOKEN,
+            webhook_url=f"https://{RENDER_EXTERNAL_URL}/{TELEGRAM_TOKEN}"
+        )
+    else:
+        app.run_polling()
