@@ -1,7 +1,7 @@
 import os
 from threading import Thread
 from flask import Flask
-from groq import Groq
+from google import genai
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
@@ -11,13 +11,13 @@ from telegram.ext import (
     filters,
 )
 
-# --- 1. MINIMALER WEBSERVER FÜR RENDER & UPTIMEROBOT ---
+# --- 1. WEBSERVER FÜR RENDER ---
 flask_app = Flask("")
 
 
 @flask_app.route("/")
 def home():
-    return "Bot läuft!"
+    return "Kai Bot läuft!"
 
 
 def run_flask():
@@ -31,42 +31,43 @@ def keep_alive():
     t.start()
 
 
-# --- 2. TELEGRAM & GROQ BOT LOGIK ---
+# --- 2. TELEGRAM & GEMINI BOT LOGIK ---
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
-groq_client = Groq(api_key=GROQ_API_KEY)
+# Gemini Client initialisieren
+ai_client = genai.Client(api_key=GEMINI_API_KEY)
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Hallo! Ich bin dein KI-Assistent. Wie kann ich dir helfen?")
+    await update.message.reply_text(
+        "Mein Name ist Kai Bot und ich bin dein spezieller KI-Assistent."
+    )
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
 
     try:
-        completion = groq_client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[{"role": "user", "content": user_text}],
+        # Anfrage an das Modell senden
+        response = ai_client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=user_text,
         )
-        response_text = completion.choices[0].message.content
-        await update.message.reply_text(response_text)
+        await update.message.reply_text(response.text)
     except Exception as e:
         await update.message.reply_text(f"Fehler bei der Verarbeitung: {e}")
 
 
-# --- 3. START DES BOT-DIENSTES ---
+# --- 3. BOT STARTEN ---
 if __name__ == "__main__":
-    # Webserver im Hintergrund starten
     keep_alive()
 
-    # Telegram-Bot initialisieren und starten
     bot_app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
     bot_app.add_handler(CommandHandler("start", start))
     bot_app.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message)
     )
 
-    print("Bot wird gestartet...")
+    print("Kai Bot wird gestartet...")
     bot_app.run_polling()
