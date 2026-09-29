@@ -1,41 +1,30 @@
 import os
-from telegram import Update
-from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters
-from groq import Groq
+from threading import Thread
+from flask import Flask
 
-# Deine Keys werden gleich sicher auf dem Server hinterlegt
-TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
+# 1. Minimalen Webserver erstellen
+app = Flask(__name__)
 
-# Groq Klient initialisieren
-client = Groq(api_key=GROQ_API_KEY)
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_message = update.message.text
-    
-    # Anfrage an Groq senden
-    chat_completion = client.chat.completions.create(
-        messages=[
-            {
-                "role": "user",
-                "content": user_message,
-            }
-        ],
-        model="qwen/qwen3.8-27b",
-        max_tokens=500,
-    )
-    
-    # Antwort von der KI extrahieren
-    bot_reply = chat_completion.choices[0].message.content
-    
-    # Antwort an Telegram zurückschicken
-    await update.message.reply_text(bot_reply)
+@app.route("/")
+def home():
+    return "Bot läuft!"
 
+
+def run():
+    # Render weist automatisch einen PORT über die Umgebungsvariable zu
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host="0.0.0.0", port=port)
+
+
+def keep_alive():
+    t = Thread(target=run)
+    t.daemon = True
+    t.start()
+
+
+# 2. Den Webserver ganz am Anfang aufrufen
 if __name__ == "__main__":
-    app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
-    
-    # Auf alle Textnachrichten reagieren
-    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
-    
-    print("Bot läuft...")
-    app.run_polling()
+    keep_alive()
+
+    # Hier steht dein bisheriger Telegram-Bot-Code (z. B. app.run_polling())
