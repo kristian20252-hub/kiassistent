@@ -152,25 +152,39 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         or "Was ist auf diesem Bild zu sehen? Beschreibe es genau auf Deutsch."
     )
 
-    try:
-        response = gemini_client.models.generate_content(
-            model="gemini-1.5-flash",
-            contents=[
-                SYSTEM_PROMPT,
-                genai.types.Part.from_bytes(
-                    data=bytes(photo_bytes), mime_type="image/jpeg"
-                ),
-                caption,
-            ],
-        )
-        if response.text:
-            await update.message.reply_text(response.text)
-        else:
-            await update.message.reply_text(
-                "Bild konnte nicht analysiert werden."
+    # Liste von Gemini-Modellen, die nacheinander probiert werden
+    gemini_models = [
+        "gemini-2.5-flash",
+        "gemini-2.0-flash",
+        "gemini-1.5-flash",
+    ]
+
+    response_text = None
+    last_error = None
+
+    for model_name in gemini_models:
+        try:
+            response = gemini_client.models.generate_content(
+                model=model_name,
+                contents=[
+                    SYSTEM_PROMPT,
+                    genai.types.Part.from_bytes(
+                        data=bytes(photo_bytes), mime_type="image/jpeg"
+                    ),
+                    caption,
+                ],
             )
-    except Exception as e:
-        await update.message.reply_text(f"Bildanalyse-Fehler: {e}")
+            if response.text:
+                response_text = response.text
+                break
+        except Exception as e:
+            last_error = e
+            continue
+
+    if response_text:
+        await update.message.reply_text(response_text)
+    else:
+        await update.message.reply_text(f"Bildanalyse-Fehler: {last_error}")
 
 
 # --- 3. BOT STARTEN ---
@@ -188,3 +202,4 @@ if __name__ == "__main__":
 
     print("Kai Bot gestartet...")
     bot_app.run_polling()
+
