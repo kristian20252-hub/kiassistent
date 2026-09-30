@@ -8,7 +8,7 @@ from flask import Flask
 from google import genai
 from google.genai import types
 from groq import Groq
-import moviepy.editor as mp
+import moviepy
 from PIL import Image, ImageDraw, ImageFont
 import requests
 from telegram import Update
@@ -291,7 +291,6 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         x = (img.width - text_width) / 2
         y = img.height - text_height - 40
 
-        # Umrandung für bessere Lesbarkeit
         draw.text((x - 2, y), text_to_write, font=font, fill=(0, 0, 0))
         draw.text((x + 2, y), text_to_write, font=font, fill=(0, 0, 0))
         draw.text((x, y - 2), text_to_write, font=font, fill=(0, 0, 0))
@@ -325,7 +324,7 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
         video_file = await update.message.video.get_file()
         await video_file.download_to_drive(input_path)
 
-        clip = mp.VideoFileClip(input_path)
+        clip = moviepy.VideoFileClip(input_path)
 
         start_sec = 0
         end_sec = min(clip.duration, 10)
