@@ -62,7 +62,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             # Exakt von Google gefordertes Modell
             response = ai_client.models.generate_content(
-                model="gemini-3.8-flash",
+                model="gemini-2.5-flash",
                 contents=user_text,
                 config=types.GenerateContentConfig(
                     system_instruction=SYSTEM_PROMPT,
