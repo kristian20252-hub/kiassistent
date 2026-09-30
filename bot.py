@@ -57,12 +57,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
 
-    max_retries = 3
+    max_retries = 5
     for attempt in range(max_retries):
         try:
-            # Exakte Bezeichnung für das neue google-genai SDK
+            # Exakt von Google gefordertes Modell
             response = ai_client.models.generate_content(
-                model="gemini-2.5-flash",
+                model="gemini-3.8-flash",
                 contents=user_text,
                 config=types.GenerateContentConfig(
                     system_instruction=SYSTEM_PROMPT,
@@ -78,14 +78,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 or "429" in error_str
                 or "RESOURCE_EXHAUSTED" in error_str
             ):
-                time.sleep(2)
+                time.sleep(3)
                 continue
             else:
                 await update.message.reply_text(f"API Fehler: {e}")
                 return
 
     await update.message.reply_text(
-        "Google Ratenlimit im Free Tier erreicht. Bitte kurz 10 Sekunden warten!"
+        "Google ist gerade stark ausgelastet. Bitte versuche es in ein paar Sekunden erneut."
     )
 
 
