@@ -138,7 +138,7 @@ async def send_voice_reply(update: Update, text: str):
         await update.message.reply_text(text)
 
 
-# --- BILDGENERIERUNG VIA POLLINATIONS (ERHÖHTER TIMEOUT) ---
+# --- BILDGENERIERUNG VIA POLLINATIONS ---
 def fetch_image_from_pollinations(prompt: str):
     encoded_prompt = urllib.parse.quote(prompt)
     url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=1024&nologo=true"
@@ -256,7 +256,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
             os.remove(voice_file_path)
 
 
-# --- TEXT-CHAT UND AUTOMATISCHE BILDERKENNUNG ---
+# --- TEXT-CHAT UND ERWEITERTE AUTOMATISCHE BILDERKENNUNG ---
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     user_text = update.message.text
@@ -264,21 +264,43 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     lower_text = user_text.lower()
 
+    # Erweiterte Erkennung für Bildwünsche (ohne Zwang zum Slash-Befehl)
     image_triggers = [
         "erstelle ein bild",
+        "erstelle bild",
         "generiere ein bild",
+        "mach ein bild",
+        "bild von",
         "zeichne",
         "mal ein bild",
-        "erstelle bild",
-        "bild von",
-        "mach ein bild",
     ]
-    if any(trigger in lower_text for trigger in image_triggers):
+
+    # Prüfen, ob der Text mit "bild" beginnt oder einen der Trigger enthält
+    is_image_request = lower_text.startswith("bild") or any(
+        trigger in lower_text for trigger in image_triggers
+    )
+
+    if is_image_request:
+        # Den Befehl/Auslöser aus dem Prompt filtern, damit Pollinations den reinen Inhalt bekommt
+        clean_prompt = user_text
+        for trigger in image_triggers:
+            if trigger in lower_text:
+                clean_prompt = re.sub(
+                    trigger, "", clean_prompt, flags=re.IGNORECASE
+                ).strip()
+        if lower_text.startswith("bild"):
+            clean_prompt = re.sub(
+                r"^bild\s*(von)?\s*", "", clean_prompt, flags=re.IGNORECASE
+            ).strip()
+
+        if not clean_prompt:
+            clean_prompt = user_text  # Fallback falls es leer wird
+
         msg = await update.message.reply_text(
             "Erstelle dein Bild kostenlos (bitte hab einen Moment Geduld)..."
         )
         try:
-            img_bytes = fetch_image_from_pollinations(user_text)
+            img_bytes = fetch_image_from_pollinations(clean_prompt)
             if img_bytes:
                 await update.message.reply_photo(
                     photo=io.BytesIO(img_bytes),
@@ -295,6 +317,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await msg.edit_text("Zeitüberschreitung beim Generieren.")
             return
 
+    # Normaler Text-Chat Verlauf
     user_chat_history[chat_id].append({"role": "user", "content": user_text})
     if len(user_chat_history[chat_id]) > MAX_HISTORY:
         user_chat_history[chat_id] = user_chat_history[chat_id][-MAX_HISTORY:]
@@ -485,6 +508,6 @@ if __name__ == "__main__":
     bot_app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     bot_app.add_handler(MessageHandler(filters.VIDEO, handle_video))
 
-    print("Kai Bot mit erhöhtem Bild-Timeout gestartet...")
+    print("Kai Bot mit flexibler Bild-Erkennung gestartet...")
     bot_app.run_polling()
 
