@@ -47,11 +47,8 @@ SYSTEM_PROMPT = (
     "um Kontext zu verstehen."
 )
 
-# Aktive Modelle auf Groq
-MODELS_TO_TRY = [
-    "llama-3.3-70b-versatile",
-    "llama-3.1-8b-instant",
-]
+# Aktuell aktives Groq-Modell
+GROQ_MODEL = "llama-3.3-70b-versatile"
 
 # Gedächtnis für jeden Nutzer
 user_chat_history = defaultdict(list)
@@ -87,28 +84,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_chat_history[chat_id]
     )
 
-    reply = None
-    last_error = None
-
-    for model in MODELS_TO_TRY:
-        try:
-            response = groq_client.chat.completions.create(
-                model=model, messages=messages_payload, temperature=0.7
-            )
-            reply = response.choices[0].message.content
-            if reply:
-                break
-        except Exception as e:
-            last_error = e
-            continue
-
-    if reply:
-        user_chat_history[chat_id].append(
-            {"role": "assistant", "content": reply}
+    try:
+        response = groq_client.chat.completions.create(
+            model=GROQ_MODEL, messages=messages_payload, temperature=0.7
         )
-        await update.message.reply_text(reply)
-    else:
-        await update.message.reply_text(f"Groq API Fehler: {last_error}")
+        reply = response.choices[0].message.content
+        if reply:
+            user_chat_history[chat_id].append(
+                {"role": "assistant", "content": reply}
+            )
+            await update.message.reply_text(reply)
+    except Exception as e:
+        await update.message.reply_text(f"Groq API Fehler: {e}")
 
 
 # --- 3. BOT STARTEN ---
@@ -124,3 +111,4 @@ if __name__ == "__main__":
 
     print("Kai Bot wird gestartet...")
     bot_app.run_polling()
+
