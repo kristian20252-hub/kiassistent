@@ -47,11 +47,11 @@ SYSTEM_PROMPT = (
     "um Kontext zu verstehen."
 )
 
-# Liste aktuell aktiver Groq-Modelle als Fallback
+# Aktuelle und aktive Groq-Modelle
 MODELS_TO_TRY = [
-    "llama-3.1-8b-instant",
     "llama-3.3-70b-versatile",
-    "mixtral-8x7b-32768",
+    "llama-3.1-8b-instant",
+    "gemma2-9b-it",
 ]
 
 # Gedächtnis für jeden Nutzer
@@ -91,7 +91,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply = None
     last_error = None
 
-    # Automatische Suche nach einem funktionierenden Modell
     for model in MODELS_TO_TRY:
         try:
             response = groq_client.chat.completions.create(
@@ -126,4 +125,3 @@ if __name__ == "__main__":
 
     print("Kai Bot wird gestartet...")
     bot_app.run_polling()
-
