@@ -141,7 +141,7 @@ async def send_voice_reply(update: Update, text: str):
         await update.message.reply_text(text)
 
 
-# --- YOUTUBE DOWNLOAD FUNKTION (MIT BOT-SCHUTZ-UMGEHUNG) ---
+# --- YOUTUBE DOWNLOAD FUNKTION (MIT UMGEHUNG VON BOT-SCHUTZ) ---
 async def download_youtube(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args
     url = args[0] if args else update.message.text
@@ -157,11 +157,18 @@ async def download_youtube(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     output_filename = "downloaded_video.mp4"
+    # Optimierte Optionen zur Umgehung der Bot-Erkennung und Regionsbeschränkung
     ydl_opts = {
         "format": "best[ext=mp4]/best",
         "outtmpl": output_filename,
-        "max_filesize": 50 * 1024 * 1024,
-        "extractor_args": {"youtube": {"player_client": ["android", "web"]}},
+        "max_filesize": 50 * 1024 * 1024, # Telegram Limit
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["web", "mweb", "ios"] # Bevorzugte Clients
+            }
+        },
+        "geo_bypass": True,
+        "nocheckcertificate": True,
     }
 
     try:
@@ -182,7 +189,7 @@ async def download_youtube(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except Exception as e:
         await msg.edit_text(
-            f"Fehler beim YouTube-Download (möglicherweise zu groß für Telegram): {e}"
+            f"Fehler beim YouTube-Download (möglicherweise zu groß für Telegram oder blockiert): {e}"
         )
 
     finally:
@@ -317,11 +324,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     lower_text = user_text.lower()
 
+    # Prüfen, ob ein YouTube-Link im Text geschickt wurde
     if "youtube.com" in user_text or "youtu.be" in user_text:
         context.args = [user_text]
         await download_youtube(update, context)
         return
 
+    # Erweiterte Erkennung für Bildwünsche (ohne Zwang zum Slash-Befehl)
     image_triggers = [
         "erstelle ein bild",
         "erstelle bild",
@@ -332,11 +341,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "mal ein bild",
     ]
 
+    # Prüfen, ob der Text mit "bild" beginnt oder einen der Trigger enthält
     is_image_request = lower_text.startswith("bild") or any(
         trigger in lower_text for trigger in image_triggers
     )
 
     if is_image_request:
+        # Den Befehl/Auslöser aus dem Prompt filtern, damit Pollinations den reinen Inhalt bekommt
         clean_prompt = user_text
         for trigger in image_triggers:
             if trigger in lower_text:
@@ -349,7 +360,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ).strip()
 
         if not clean_prompt:
-            clean_prompt = user_text
+            clean_prompt = user_text # Fallback falls es leer wird
 
         msg = await update.message.reply_text(
             "Erstelle dein Bild kostenlos (bitte hab einen Moment Geduld)..."
@@ -372,6 +383,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await msg.edit_text("Zeitüberschreitung beim Generieren.")
             return
 
+    # Normaler Text-Chat Verlauf
     user_chat_history[chat_id].append({"role": "user", "content": user_text})
     if len(user_chat_history[chat_id]) > MAX_HISTORY:
         user_chat_history[chat_id] = user_chat_history[chat_id][-MAX_HISTORY:]
@@ -407,7 +419,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --- BILD-BEARBEITUNG: TEXT AUF BILD SCHREIBEN ---
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Prüfe ob das Bild als Antwort auf ein anderes Bild oder mit Text geschickt wurde
     caption = update.message.caption or ""
+
+    # Falls der Nutzer per Antwort-Funktion geantwortet hat, holen wir den Text aus der Nachricht
     if not caption and update.message.reply_to_message:
         caption = update.message.reply_to_message.text or ""
 
@@ -462,6 +477,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 caption,
                 flags=re.IGNORECASE,
             )
+            # Nimm den letzten Teil nach dem Befehl als Text
             text_to_write = (
                 parts[-1].strip()
                 if len(parts) > 1 and parts[-1].strip()
@@ -482,6 +498,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         x = (img.width - text_width) / 2
         y = img.height - text_height - 40
 
+        # Text mit schwarzem Rand und weißem Kern zeichnen für perfekte Lesbarkeit
         draw.text((x - 2, y), text_to_write, font=font, fill=(0, 0, 0))
         draw.text((x + 2, y), text_to_write, font=font, fill=(0, 0, 0))
         draw.text((x, y - 2), text_to_write, font=font, fill=(0, 0, 0))
@@ -573,6 +590,6 @@ if __name__ == "__main__":
     bot_app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     bot_app.add_handler(MessageHandler(filters.VIDEO, handle_video))
 
-    print("Kai Bot mit optimiertem YouTube-Download gestartet...")
+    print("Kai Bot gestartet...")
     bot_app.run_polling()
 
