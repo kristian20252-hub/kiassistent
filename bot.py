@@ -33,7 +33,7 @@ def keep_alive():
 
 # --- 2. TELEGRAM & GROQ BOT LOGIK ---
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
-GROQ_API_KEY = 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
+GROQ_API_KEY = "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"
 
 groq_client = Groq(api_key=GROQ_API_KEY)
 
