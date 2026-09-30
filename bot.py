@@ -60,9 +60,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     max_retries = 3
     for attempt in range(max_retries):
         try:
-            # Nutzt das stabile Standard-Modell mit hoher Verfügbarkeit
+            # Exakte Bezeichnung für das neue google-genai SDK
             response = ai_client.models.generate_content(
-                model="gemini-1.5-flash",
+                model="gemini-2.5-flash",
                 contents=user_text,
                 config=types.GenerateContentConfig(
                     system_instruction=SYSTEM_PROMPT,
