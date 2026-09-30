@@ -138,16 +138,19 @@ async def send_voice_reply(update: Update, text: str):
         await update.message.reply_text(text)
 
 
-# --- BILDGENERIERUNG VIA POLLINATIONS ---
+# --- BILDGENERIERUNG VIA POLLINATIONS (ERHÖHTER TIMEOUT) ---
 def fetch_image_from_pollinations(prompt: str):
     encoded_prompt = urllib.parse.quote(prompt)
     url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=1024&nologo=true"
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
     }
-    response = requests.get(url, headers=headers, timeout=60)
-    if response.status_code == 200:
-        return response.content
+    try:
+        response = requests.get(url, headers=headers, timeout=90)
+        if response.status_code == 200:
+            return response.content
+    except Exception as e:
+        print(f"Pollinations Timeout/Fehler: {e}")
     return None
 
 
@@ -161,7 +164,9 @@ async def generate_image_command(
         )
         return
 
-    msg = await update.message.reply_text("Erstelle dein Bild kostenlos...")
+    msg = await update.message.reply_text(
+        "Erstelle dein Bild kostenlos (das kann einen Moment dauern)..."
+    )
 
     try:
         img_bytes = fetch_image_from_pollinations(prompt)
@@ -171,7 +176,9 @@ async def generate_image_command(
             )
             await msg.delete()
         else:
-            await msg.edit_text("Der Bild-Server ist derzeit ausgelastet.")
+            await msg.edit_text(
+                "Der Bild-Server ist derzeit überlastet. Bitte versuche es in wenigen Sekunden noch einmal."
+            )
     except Exception:
         await msg.edit_text("Zeitüberschreitung beim Bild-Server.")
 
@@ -268,7 +275,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     if any(trigger in lower_text for trigger in image_triggers):
         msg = await update.message.reply_text(
-            "Erstelle dein Bild kostenlos..."
+            "Erstelle dein Bild kostenlos (bitte hab einen Moment Geduld)..."
         )
         try:
             img_bytes = fetch_image_from_pollinations(user_text)
@@ -280,7 +287,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await msg.delete()
                 return
             else:
-                await msg.edit_text("Bild-Server ist ausgelastet.")
+                await msg.edit_text(
+                    "Bild-Server ist gerade ausgelastet. Probier es gleich noch einmal."
+                )
                 return
         except Exception:
             await msg.edit_text("Zeitüberschreitung beim Generieren.")
@@ -476,6 +485,6 @@ if __name__ == "__main__":
     bot_app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     bot_app.add_handler(MessageHandler(filters.VIDEO, handle_video))
 
-    print("Kai Bot mit Heikos Widmung gestartet...")
+    print("Kai Bot mit erhöhtem Bild-Timeout gestartet...")
     bot_app.run_polling()
 
