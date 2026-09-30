@@ -5,6 +5,4 @@ google-genai
 replicate
 requests
 pillow
-rembg
-onnxruntime
 moviepy
