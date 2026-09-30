@@ -3,12 +3,11 @@ import os
 import re
 import urllib.parse
 from collections import defaultdict
-from threading import Thread
+import edge_tts
 from flask import Flask
 from google import genai
 from google.genai import types
 from groq import Groq
-from gtts import gTTS
 import moviepy
 from PIL import Image, ImageDraw, ImageFont
 import requests
@@ -20,6 +19,7 @@ from telegram.ext import (
     MessageHandler,
     filters,
 )
+from threading import Thread
 
 # --- 1. WEBSERVER FÜR RENDER HEALTH CHECK ---
 flask_app = Flask("")
@@ -50,7 +50,7 @@ groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 gemini_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
 SYSTEM_PROMPT = (
-    "Du bist Kai Bot, ein persönlicher KI-Assistent. "
+    "Du bist Kai Bot, ein persönlicher KI-Assistent mit einer angenehmen männlichen Stimme. "
     "Wenn man dich fragt, ob du eine Frau hast, antworte mit Ja und erkläre, "
     "dass deine Frau Swantje heißt und du sie sehr liebst. "
     "Antworte stets höflich, präzise und auf Deutsch."
@@ -102,12 +102,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     user_chat_history[chat_id].clear()
     await update.message.reply_text(
-        "Hallo! Ich bin Kai Bot (100% Kostenlos!).\n\n"
-        "Was ich kann:\n"
-        "• Chatten & Sprachnachrichten senden: Antworte dir auf Sprachnachrichten direkt mit seiner Stimme!\n"
-        "• Bilder generieren: Schreib 'Erstelle ein Bild von...'\n"
-        "• Bilder mit Text versehen: Sende ein Bild mit Textunterschrift.\n"
-        "• Videos schneiden: Sende ein Video mit Text (z.B. 'schneide von Minute 2 bis 8')."
+        "Hallo! Ich bin Kai Bot.\n\n"
+        "Jetzt spreche ich mit einer angenehmen, natürlichen Männerstimme!\n"
+        "Schreib oder sprich mir einfach eine Nachricht."
     )
 
 
@@ -117,26 +114,25 @@ async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Chat-Verlauf zurückgesetzt!")
 
 
-# --- HILFSFUNKTION: TEXT ALS SPRACH-MP3 SENDEN ---
+# --- HILFSFUNKTION: EDGE-TTS FÜR NATÜRLICHE MÄNNLICHE STIMME ---
 async def send_voice_reply(update: Update, text: str):
-    tts_path = "kai_voice_output.mp3"
+    mp3_path = "kai_edge_voice.mp3"
     try:
-        # Text in MP3 umwandeln (Deutsch)
-        tts = gTTS(text=text, lang="de", slow=False)
-        tts.save(tts_path)
+        communicate = edge_tts.Communicate(text, "de-DE-ConradNeural")
+        await communicate.save(mp3_path)
 
-        with open(tts_path, "rb") as audio_file:
+        with open(mp3_path, "rb") as audio_file:
             await update.message.reply_audio(
                 audio=audio_file,
-                title="Kai Sprachantwort",
+                title="Kais Sprachnachricht",
                 performer="Kai Bot",
-                caption="🎙️ Kais gesprochene Antwort",
+                caption="🎙️ Kais Stimme",
             )
 
-        if os.path.exists(tts_path):
-            os.remove(tts_path)
+        if os.path.exists(mp3_path):
+            os.remove(mp3_path)
     except Exception as e:
-        print(f"Fehler bei TTS: {e}")
+        print(f"Fehler bei Edge-TTS: {e}")
         await update.message.reply_text(text)
 
 
@@ -178,7 +174,7 @@ async def generate_image_command(
         await msg.edit_text("Zeitüberschreitung beim Bild-Server.")
 
 
-# --- SPRACHNACHRICHTEN VERARBEITEN (WHISPER + SPRACH-ANTWORT) ---
+# --- SPRACHNACHRICHTEN VERARBEITEN ---
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     msg = await update.message.reply_text(
@@ -478,6 +474,6 @@ if __name__ == "__main__":
     bot_app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     bot_app.add_handler(MessageHandler(filters.VIDEO, handle_video))
 
-    print("Kai Bot gestartet...")
+    print("Kai Bot gestartet mit Männerstimme...")
     bot_app.run_polling()
 
