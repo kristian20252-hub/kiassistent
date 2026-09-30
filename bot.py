@@ -40,7 +40,7 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 # Gemini Client initialisieren
 ai_client = genai.Client(api_key=GEMINI_API_KEY)
 
-# Identität und Regeln für den Bot festlegen
+# Identität und Anweisungen für Kai Bot
 SYSTEM_PROMPT = (
     "Du bist Kai Bot. Wenn man dich nach deinem Namen oder wer du bist fragt, "
     "antworte exakt: 'Mein Name ist Kai Bot und ich bin dein persönlicher KI-Assistent.' "
@@ -59,26 +59,31 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
 
-    max_retries = 3
-    for attempt in range(max_retries):
-        try:
-            response = ai_client.models.generate_content(
-                model="gemini-3.8-flash",
-                contents=user_text,
-                config=types.GenerateContentConfig(
-                    system_instruction=SYSTEM_PROMPT,
-                ),
-            )
-            if response and response.text:
-                await update.message.reply_text(response.text)
-                return
-        except Exception as e:
-            error_str = str(e)
-            if "503" in error_str or "429" in error_str:
-                time.sleep(2)
-                continue
-            else:
-                break
+    # Gültige Gemini-Modellnamen
+    models_to_try = ["gemini-2.0-flash", "gemini-flash-latest"]
+
+    for model_name in models_to_try:
+        for attempt in range(2):
+            try:
+                response = ai_client.models.generate_content(
+                    model=model_name,
+                    contents=user_text,
+                    config=types.GenerateContentConfig(
+                        system_instruction=SYSTEM_PROMPT,
+                    ),
+                )
+                if response and response.text:
+                    await update.message.reply_text(response.text)
+                    return
+            except Exception as e:
+                error_str = str(e)
+                # Bei echten Rate Limits (429/503) kurz warten und wiederholen
+                if "429" in error_str or "503" in error_str:
+                    time.sleep(1.5)
+                    continue
+                else:
+                    # Bei Modellfehlern direkt zum nächsten Modell springen
+                    break
 
     await update.message.reply_text(
         "Die Server von Google sind derzeit leider stark ausgelastet. Bitte versuche es in einem kurzen Moment erneut."
