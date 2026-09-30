@@ -47,14 +47,14 @@ SYSTEM_PROMPT = (
     "um Kontext zu verstehen."
 )
 
-# Gedächtnis für jeden Nutzer (speichert die letzten N Nachrichten)
+# Gedächtnis für jeden Nutzer
 user_chat_history = defaultdict(list)
-MAX_HISTORY = 10  # Speichert die letzten 10 Nachrichten für den Kontext
+MAX_HISTORY = 10  # Speichert die letzten 10 Nachrichten
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
-    user_chat_history[chat_id].clear()  # Verlauf bei /start zurücksetzen
+    user_chat_history[chat_id].clear()
     await update.message.reply_text(
         "Mein Name ist Kai Bot und ich bin dein persönlicher KI-Assistent. Ich habe unser Gespräch ab jetzt im Gedächtnis!"
     )
@@ -72,26 +72,27 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     user_text = update.message.text
 
-    # Nachricht des Nutzers zum Gedächtnis hinzufügen
+    # Nutzer-Nachricht im Gedächtnis ablegen
     user_chat_history[chat_id].append({"role": "user", "content": user_text})
 
-    # Historie auf die letzten MAX_HISTORY Nachrichten begrenzen
+    # Historie begrenzen
     if len(user_chat_history[chat_id]) > MAX_HISTORY:
         user_chat_history[chat_id] = user_chat_history[chat_id][-MAX_HISTORY:]
 
-    # Nachrichten-Paket für Groq schnüren (System-Prompt + Verlauf)
-    messages_payload = [{"role": "system", "content": SYSTEM_PROMPT}] + user_chat_history[chat_id]
+    # Prompt + kompletter Verlauf für Groq
+    messages_payload = [{"role": "system", "content": SYSTEM_PROMPT}] + list(
+        user_chat_history[chat_id]
+    )
 
     try:
         response = groq_client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model="llama3-70b-8192",  # Stabiles, hochleistungsfähiges Modell
             messages=messages_payload,
             temperature=0.7,
         )
 
         reply = response.choices[0].message.content
         if reply:
-            # Antwort der KI ebenfalls im Gedächtnis ablegen
             user_chat_history[chat_id].append(
                 {"role": "assistant", "content": reply}
             )
@@ -114,3 +115,4 @@ if __name__ == "__main__":
 
     print("Kai Bot wird gestartet...")
     bot_app.run_polling()
+
