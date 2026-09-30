@@ -53,7 +53,14 @@ MAX_HISTORY = 10
 
 def get_chat_models():
     """Holt alle aktiven, für Chat nutzbaren Modelle von Groq."""
-    EXCLUDED_KEYWORDS = ["guard", "whisper", "embed", "vision", "safeguard"]
+    EXCLUDED_KEYWORDS = [
+        "guard",
+        "whisper",
+        "embed",
+        "vision",
+        "safeguard",
+        "preview",
+    ]
     try:
         models_page = groq_client.models.list()
         valid = [
@@ -132,7 +139,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Ich schaue mir das Bild an...")
 
-    # Höchste Auflösung des Bildes herunterladen
     photo_file = await update.message.photo[-1].get_file()
     photo_bytes = await photo_file.download_as_bytearray()
     base64_image = base64.b64encode(photo_bytes).decode("utf-8")
@@ -142,13 +148,25 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         or "Was ist auf diesem Bild zu sehen? Beschreibe es genau auf Deutsch."
     )
 
-    # Funktionierende Vision-Modelle bei Groq
     vision_candidates = [
-        "llama-3.2-11b-vision-preview",
-        "llama-3.2-11b-instant",
+        "llama-3.2-11b-vision-instruct",
+        "llama-3.2-90b-vision-instruct",
         "meta-llama/llama-3.2-11b-vision-instruct",
-        "llama-3.2-90b-vision-preview",
+        "meta-llama/llama-3.2-90b-vision-instruct",
     ]
+
+    try:
+        models_page = groq_client.models.list()
+        for m in models_page.data:
+            model_id = getattr(m, "id", "")
+            if (
+                "vision" in model_id.lower()
+                and "preview" not in model_id.lower()
+                and model_id not in vision_candidates
+            ):
+                vision_candidates.append(model_id)
+    except Exception as e:
+        print(f"Fehler beim dynamischen Laden der Vision-Modelle: {e}")
 
     reply = None
     last_error = None
