@@ -78,6 +78,24 @@ def get_chat_models():
         return ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
 
 
+def get_gemini_models():
+    """Dynamische Ermittlung verfügbarer Gemini-Modelle."""
+    try:
+        models_list = gemini_client.models.list()
+        available = []
+        for m in models_list:
+            name = getattr(m, "name", "")
+            if name.startswith("models/"):
+                name = name.replace("models/", "")
+            if "flash" in name or "pro" in name:
+                available.append(name)
+        if available:
+            return available
+    except Exception as e:
+        print(f"Fehler beim Laden der Gemini-Modelle: {e}")
+    return ["gemini-3.8-flash", "gemini-3.5-flash", "gemini-1.5-flash"]
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     user_chat_history[chat_id].clear()
@@ -192,23 +210,33 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     photo_file = await update.message.photo[-1].get_file()
     photo_bytes = await photo_file.download_as_bytearray()
 
-    try:
-        response = gemini_client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=[
-                SYSTEM_PROMPT,
-                types.Part.from_bytes(
-                    data=bytes(photo_bytes), mime_type="image/jpeg"
-                ),
-                caption,
-            ],
-        )
-        if response.text:
-            await msg.edit_text(response.text)
-        else:
-            await msg.edit_text("Keine Antwort von Gemini erhalten.")
-    except Exception as e:
-        await msg.edit_text(f"Bildanalyse-Fehler: {e}")
+    candidate_models = get_gemini_models()
+    response_text = None
+    last_error = None
+
+    for model_name in candidate_models:
+        try:
+            response = gemini_client.models.generate_content(
+                model=model_name,
+                contents=[
+                    SYSTEM_PROMPT,
+                    types.Part.from_bytes(
+                        data=bytes(photo_bytes), mime_type="image/jpeg"
+                    ),
+                    caption,
+                ],
+            )
+            if response.text:
+                response_text = response.text
+                break
+        except Exception as e:
+            last_error = e
+            continue
+
+    if response_text:
+        await msg.edit_text(response_text)
+    else:
+        await msg.edit_text(f"Bildanalyse-Fehler: {last_error}")
 
 
 # --- 3. BOT STARTEN ---
