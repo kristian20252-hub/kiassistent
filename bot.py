@@ -40,10 +40,12 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 # Gemini Client initialisieren
 ai_client = genai.Client(api_key=GEMINI_API_KEY)
 
-# Identität für den Bot festlegen
+# Identität und Regeln für den Bot festlegen
 SYSTEM_PROMPT = (
     "Du bist Kai Bot. Wenn man dich nach deinem Namen oder wer du bist fragt, "
     "antworte exakt: 'Mein Name ist Kai Bot und ich bin dein persönlicher KI-Assistent.' "
+    "Wenn man dich fragt, ob du eine Bot Frau oder Ehefrau hast, antworte mit Ja und "
+    "erkläre, dass deine Frau Swantje heißt und du sie über alles liebst. "
     "Antworte immer höflich, präzise und in korrektem Hochdeutsch."
 )
 
@@ -57,32 +59,26 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
 
-    models = ["gemini-2.5-flash", "gemini-1.5-flash"]
-
-    for model_name in models:
-        for attempt in range(3):
-            try:
-                response = ai_client.models.generate_content(
-                    model=model_name,
-                    contents=user_text,
-                    config=types.GenerateContentConfig(
-                        system_instruction=SYSTEM_PROMPT,
-                    ),
-                )
-                if response and response.text:
-                    await update.message.reply_text(response.text)
-                    return
-            except Exception as e:
-                error_str = str(e)
-                if (
-                    "503" in error_str
-                    or "429" in error_str
-                    or "RESOURCE_EXHAUSTED" in error_str
-                ):
-                    time.sleep(1.5 * (attempt + 1))
-                    continue
-                else:
-                    break
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            response = ai_client.models.generate_content(
+                model="gemini-3.8-flash",
+                contents=user_text,
+                config=types.GenerateContentConfig(
+                    system_instruction=SYSTEM_PROMPT,
+                ),
+            )
+            if response and response.text:
+                await update.message.reply_text(response.text)
+                return
+        except Exception as e:
+            error_str = str(e)
+            if "503" in error_str or "429" in error_str:
+                time.sleep(2)
+                continue
+            else:
+                break
 
     await update.message.reply_text(
         "Die Server von Google sind derzeit leider stark ausgelastet. Bitte versuche es in einem kurzen Moment erneut."
@@ -101,3 +97,4 @@ if __name__ == "__main__":
 
     print("Kai Bot wird gestartet...")
     bot_app.run_polling()
+
