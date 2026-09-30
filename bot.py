@@ -104,7 +104,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "Hallo! Ich bin Kai Bot (100% Kostenlos!).\n\n"
         "Was ich kann:\n"
-        "• Chatten & Sprachnachrichten senden: Antworte dir auf Sprachnachrichten direkt per Sprache!\n"
+        "• Chatten & Sprachnachrichten senden: Antworte dir auf Sprachnachrichten direkt mit seiner Stimme!\n"
         "• Bilder generieren: Schreib 'Erstelle ein Bild von...'\n"
         "• Bilder mit Text versehen: Sende ein Bild mit Textunterschrift.\n"
         "• Videos schneiden: Sende ein Video mit Text (z.B. 'schneide von Minute 2 bis 8')."
@@ -117,25 +117,24 @@ async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Chat-Verlauf zurückgesetzt!")
 
 
-# --- HILFSFUNKTION: TEXT IN SPRACHNACHRICHT UMWANDELN ---
+# --- HILFSFUNKTION: TEXT ALS SPRACH-MP3 SENDEN ---
 async def send_voice_reply(update: Update, text: str):
     tts_path = "kai_voice_output.mp3"
-    ogg_path = "kai_voice_output.ogg"
     try:
+        # Text in MP3 umwandeln (Deutsch)
         tts = gTTS(text=text, lang="de", slow=False)
         tts.save(tts_path)
 
-        clip = moviepy.AudioFileClip(tts_path)
-        clip.write_audiofile(ogg_path, codec="libopus", logger=None)
-        clip.close()
-
-        with open(ogg_path, "rb") as voice_file:
-            await update.message.reply_voice(voice=voice_file)
+        with open(tts_path, "rb") as audio_file:
+            await update.message.reply_audio(
+                audio=audio_file,
+                title="Kai Sprachantwort",
+                performer="Kai Bot",
+                caption="🎙️ Kais gesprochene Antwort",
+            )
 
         if os.path.exists(tts_path):
             os.remove(tts_path)
-        if os.path.exists(ogg_path):
-            os.remove(ogg_path)
     except Exception as e:
         print(f"Fehler bei TTS: {e}")
         await update.message.reply_text(text)
