@@ -47,9 +47,16 @@ SYSTEM_PROMPT = (
     "um Kontext zu verstehen."
 )
 
+# Liste aktuell aktiver Groq-Modelle als Fallback
+MODELS_TO_TRY = [
+    "llama-3.1-8b-instant",
+    "llama-3.3-70b-versatile",
+    "mixtral-8x7b-32768",
+]
+
 # Gedächtnis für jeden Nutzer
 user_chat_history = defaultdict(list)
-MAX_HISTORY = 10  # Speichert die letzten 10 Nachrichten
+MAX_HISTORY = 10
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -72,34 +79,38 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     user_text = update.message.text
 
-    # Nutzer-Nachricht im Gedächtnis ablegen
     user_chat_history[chat_id].append({"role": "user", "content": user_text})
 
-    # Historie begrenzen
     if len(user_chat_history[chat_id]) > MAX_HISTORY:
         user_chat_history[chat_id] = user_chat_history[chat_id][-MAX_HISTORY:]
 
-    # Prompt + kompletter Verlauf für Groq
     messages_payload = [{"role": "system", "content": SYSTEM_PROMPT}] + list(
         user_chat_history[chat_id]
     )
 
-    try:
-        response = groq_client.chat.completions.create(
-            model="llama3-70b-8192",  # Stabiles, hochleistungsfähiges Modell
-            messages=messages_payload,
-            temperature=0.7,
-        )
+    reply = None
+    last_error = None
 
-        reply = response.choices[0].message.content
-        if reply:
-            user_chat_history[chat_id].append(
-                {"role": "assistant", "content": reply}
+    # Automatische Suche nach einem funktionierenden Modell
+    for model in MODELS_TO_TRY:
+        try:
+            response = groq_client.chat.completions.create(
+                model=model, messages=messages_payload, temperature=0.7
             )
-            await update.message.reply_text(reply)
+            reply = response.choices[0].message.content
+            if reply:
+                break
+        except Exception as e:
+            last_error = e
+            continue
 
-    except Exception as e:
-        await update.message.reply_text(f"Groq API Fehler: {e}")
+    if reply:
+        user_chat_history[chat_id].append(
+            {"role": "assistant", "content": reply}
+        )
+        await update.message.reply_text(reply)
+    else:
+        await update.message.reply_text(f"Groq API Fehler: {last_error}")
 
 
 # --- 3. BOT STARTEN ---
