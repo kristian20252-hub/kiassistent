@@ -50,7 +50,8 @@ groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 gemini_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
 SYSTEM_PROMPT = (
-    "Du bist Kai Bot, ein persönlicher KI-Assistent mit einer angenehmen männlichen Stimme. "
+    "Du bist Kai Bot, ein persönlicher KI-Assistent mit einer angenehmen männlichen Stimme, "
+    "der auch Bilder generieren kann. "
     "Wenn man dich fragt, ob du eine Frau hast, antworte mit Ja und erkläre, "
     "dass deine Frau Swantje heißt und du sie sehr liebst. "
     "Wenn man dich fragt, wer dich erschaffen, erfunden oder erstellt hat, antworte genau so: "
@@ -264,7 +265,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     lower_text = user_text.lower()
 
-    # Erweiterte Erkennung für Bildwünsche (ohne Zwang zum Slash-Befehl)
+    # Erweiterte Erkennung für Bildwünsche
     image_triggers = [
         "erstelle ein bild",
         "erstelle bild",
@@ -275,13 +276,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "mal ein bild",
     ]
 
-    # Prüfen, ob der Text mit "bild" beginnt oder einen der Trigger enthält
     is_image_request = lower_text.startswith("bild") or any(
         trigger in lower_text for trigger in image_triggers
     )
 
     if is_image_request:
-        # Den Befehl/Auslöser aus dem Prompt filtern, damit Pollinations den reinen Inhalt bekommt
         clean_prompt = user_text
         for trigger in image_triggers:
             if trigger in lower_text:
@@ -294,7 +293,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ).strip()
 
         if not clean_prompt:
-            clean_prompt = user_text  # Fallback falls es leer wird
+            clean_prompt = user_text
 
         msg = await update.message.reply_text(
             "Erstelle dein Bild kostenlos (bitte hab einen Moment Geduld)..."
@@ -358,7 +357,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not gemini_client:
             await update.message.reply_text("Fehler: GEMINI_API_KEY fehlt.")
             return
-        msg = await update.message.reply_text("Ich schaue mir das Bild an...")
+        msg = await update.message.reply_text("I schaue mir das Bild an...")
         prompt = (
             "Was ist auf diesem Bild zu sehen? Beschreibe es genau auf Deutsch."
         )
@@ -508,6 +507,6 @@ if __name__ == "__main__":
     bot_app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     bot_app.add_handler(MessageHandler(filters.VIDEO, handle_video))
 
-    print("Kai Bot mit flexibler Bild-Erkennung gestartet...")
+    print("Kai Bot gestartet...")
     bot_app.run_polling()
 
