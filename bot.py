@@ -18,7 +18,7 @@ flask_app = Flask("")
 
 @flask_app.route("/")
 def home():
-    return "Kai Bot läuft mit Chat-Gedächtnis!"
+    return "Kai Bot läuft mit automatischer Modellerkennung!"
 
 
 def run_flask():
@@ -47,12 +47,23 @@ SYSTEM_PROMPT = (
     "um Kontext zu verstehen."
 )
 
-# Aktuell aktives Groq-Modell
-GROQ_MODEL = "llama-3.3-70b-versatile"
-
 # Gedächtnis für jeden Nutzer
 user_chat_history = defaultdict(list)
 MAX_HISTORY = 10
+
+
+def get_active_model():
+    """Fragt bei Groq live ab, welche Modelle aktuell verfügbar sind."""
+    try:
+        models_page = groq_client.models.list()
+        available = [m.id for m in models_page.data]
+        if available:
+            print(f"Verfügbare Groq-Modelle: {available}")
+            return available[0]  # Nimmt automatisch das erste verfügbare Modell
+    except Exception as e:
+        print(f"Fehler beim Abrufen der Modelle: {e}")
+    # Fallback-Modell
+    return "llama-3.3-70b-versatile"
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -84,9 +95,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_chat_history[chat_id]
     )
 
+    # Dynamisch das aktuell aktive Modell ermitteln
+    active_model = get_active_model()
+
     try:
         response = groq_client.chat.completions.create(
-            model=GROQ_MODEL, messages=messages_payload, temperature=0.7
+            model=active_model, messages=messages_payload, temperature=0.7
         )
         reply = response.choices[0].message.content
         if reply:
@@ -95,7 +109,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             await update.message.reply_text(reply)
     except Exception as e:
-        await update.message.reply_text(f"Groq API Fehler: {e}")
+        await update.message.reply_text(
+            f"Groq API Fehler (Modell {active_model}): {e}"
+        )
 
 
 # --- 3. BOT STARTEN ---
