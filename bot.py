@@ -352,7 +352,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --- BILD-BEARBEITUNG: TEXT AUF BILD SCHREIBEN ---
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Prüfe ob das Bild als Antwort auf ein anderes Bild oder mit Text geschickt wurde
     caption = update.message.caption or ""
+
+    # Falls der Nutzer per Antwort-Funktion geantwortet hat, holen wir den Text aus der Nachricht
+    if not caption and update.message.reply_to_message:
+        caption = update.message.reply_to_message.text or ""
+
     if not caption:
         if not gemini_client:
             await update.message.reply_text("Fehler: GEMINI_API_KEY fehlt.")
@@ -399,9 +405,17 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text_to_write = caption
         lower_caption = caption.lower()
         if "schreibe" in lower_caption:
-            parts = re.split(r"schreibe", caption, flags=re.IGNORECASE)
-            if len(parts) > 1:
-                text_to_write = parts[1].strip()
+            parts = re.split(
+                r"schreibe\s*(jetzt)?\s*(noch)?\s*(das\s*wort)?\s*",
+                caption,
+                flags=re.IGNORECASE,
+            )
+            # Nimm den letzten Teil nach dem Befehl als Text
+            text_to_write = (
+                parts[-1].strip()
+                if len(parts) > 1 and parts[-1].strip()
+                else caption
+            )
 
         try:
             font = ImageFont.truetype(
@@ -417,6 +431,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         x = (img.width - text_width) / 2
         y = img.height - text_height - 40
 
+        # Text mit schwarzem Rand und weißem Kern zeichnen für perfekte Lesbarkeit
         draw.text((x - 2, y), text_to_write, font=font, fill=(0, 0, 0))
         draw.text((x + 2, y), text_to_write, font=font, fill=(0, 0, 0))
         draw.text((x, y - 2), text_to_write, font=font, fill=(0, 0, 0))
@@ -507,6 +522,6 @@ if __name__ == "__main__":
     bot_app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     bot_app.add_handler(MessageHandler(filters.VIDEO, handle_video))
 
-    print("Kai Bot mit Seed-Optimierung gestartet...")
+    print("Kai Bot mit optimierter Bildbearbeitung gestartet...")
     bot_app.run_polling()
 
