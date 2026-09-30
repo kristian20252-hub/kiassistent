@@ -114,7 +114,7 @@ async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Chat-Verlauf zurückgesetzt!")
 
 
-# --- BEFEHL: /bild (BILD ERSTELLEN VIA REPLICATE / FLUX) ---
+# --- BEFEHL: /bild (BILD NEU ERSTELLEN VIA REPLICATE / FLUX) ---
 async def generate_image_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ):
@@ -209,9 +209,9 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             image_stream = io.BytesIO(photo_bytes)
             image_stream.name = "input_image.jpg"
 
-            # Verwende instruct-pix2pix zur Bildbearbeitung
+            # Replicate Bild-zu-Bild Aufruf ohne veralteten Hash
             output = replicate.run(
-                "timothybrooks/instruct-pix2pix:30c1d0b916a6f8ef220b710813258c2129b864421147d01f507db2388c982bf9",
+                "timothybrooks/instruct-pix2pix",
                 input={"image": image_stream, "prompt": caption},
             )
 
