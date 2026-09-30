@@ -1,4 +1,5 @@
 import os
+import time
 from threading import Thread
 from flask import Flask
 from google import genai
@@ -56,19 +57,37 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
 
-    try:
-        response = ai_client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=user_text,
-            config=types.GenerateContentConfig(
-                system_instruction=SYSTEM_PROMPT,
-            ),
-        )
-        if response and response.text:
-            await update.message.reply_text(response.text)
-    except Exception as e:
-        # Gibt jetzt die EXAKTE Ursache in Telegram aus, damit wir den Fehler sofort lösen können
-        await update.message.reply_text(f"API Fehler: {e}")
+    # Bis zu 4 Versuche bei kurzzeitiger Google-Überlastung
+    max_retries = 4
+    for attempt in range(max_retries):
+        try:
+            response = ai_client.models.generate_content(
+                model="gemini-3.8-flash",
+                contents=user_text,
+                config=types.GenerateContentConfig(
+                    system_instruction=SYSTEM_PROMPT,
+                ),
+            )
+            if response and response.text:
+                await update.message.reply_text(response.text)
+                return
+        except Exception as e:
+            error_str = str(e)
+            # Bei temporärer Überlastung (503/429) kurz warten und nochmals versuchen
+            if (
+                "503" in error_str
+                or "429" in error_str
+                or "UNAVAILABLE" in error_str
+            ):
+                time.sleep(2)
+                continue
+            else:
+                await update.message.reply_text(f"Fehler: {e}")
+                return
+
+    await update.message.reply_text(
+        "Google ist gerade stark ausgelastet. Bitte versuche es gleich noch einmal."
+    )
 
 
 # --- 3. BOT STARTEN ---
@@ -83,4 +102,3 @@ if __name__ == "__main__":
 
     print("Kai Bot wird gestartet...")
     bot_app.run_polling()
-
