@@ -1,4 +1,5 @@
 import os
+import time
 from threading import Thread
 from flask import Flask
 from google import genai
@@ -48,15 +49,25 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
 
-    try:
-        # Aktuelles Gemini-Modell verwenden
-        response = ai_client.models.generate_content(
-            model="gemini-3.8-flash",
-            contents=user_text,
-        )
-        await update.message.reply_text(response.text)
-    except Exception as e:
-        await update.message.reply_text(f"Fehler bei der Verarbeitung: {e}")
+    # Automatische Wiederholung bei Überlastung (503)
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            response = ai_client.models.generate_content(
+                model="gemini-3.8-flash",
+                contents=user_text,
+            )
+            await update.message.reply_text(response.text)
+            return
+        except Exception as e:
+            if "503" in str(e) and attempt < max_retries - 1:
+                time.sleep(2)  # Kurze Pause vor dem nächsten Versuch
+                continue
+            else:
+                await update.message.reply_text(
+                    "Die Server sind gerade stark ausgelastet. Bitte versuche es in einer Minute erneut."
+                )
+                break
 
 
 # --- 3. BOT STARTEN ---
