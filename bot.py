@@ -19,7 +19,7 @@ flask_app = Flask("")
 
 @flask_app.route("/")
 def home():
-    return "Kai Bot läuft mit Text- und Bilderkennung!"
+    return "Kai Bot läuft mit Text-, Speicher- und Bilderkennung!"
 
 
 def run_flask():
@@ -52,8 +52,8 @@ MAX_HISTORY = 10
 
 
 def get_chat_models():
-    """Holt alle nutzbaren Chat-Modelle von Groq."""
-    EXCLUDED_KEYWORDS = ["guard", "whisper", "embed"]
+    """Holt alle aktiven, für Chat nutzbaren Modelle von Groq."""
+    EXCLUDED_KEYWORDS = ["guard", "whisper", "embed", "vision", "safeguard"]
     try:
         models_page = groq_client.models.list()
         valid = [
@@ -63,21 +63,47 @@ def get_chat_models():
             and not any(kw in m.id.lower() for kw in EXCLUDED_KEYWORDS)
         ]
 
-        priority = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
+        priority = [
+            "llama-3.3-70b-versatile",
+            "llama-3.1-8b-instant",
+        ]
         sorted_models = [m for m in priority if m in valid]
         for m in valid:
             if m not in sorted_models:
                 sorted_models.append(m)
         return sorted_models
-    except Exception:
+    except Exception as e:
+        print(f"Fehler beim Laden der Chat-Modelle: {e}")
         return ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
+
+
+def get_vision_models():
+    """Holt alle nutzbaren Vision-Modelle von Groq."""
+    try:
+        models_page = groq_client.models.list()
+        vision_models = [
+            m.id
+            for m in models_page.data
+            if hasattr(m, "id") and "vision" in m.id.lower()
+        ]
+        if vision_models:
+            return vision_models
+    except Exception as e:
+        print(f"Fehler beim Laden der Vision-Modelle: {e}")
+
+    # Fallback-Vision-Modelle
+    return [
+        "llama-3.2-11b-vision-instruct",
+        "llama-3.2-90b-vision-instruct",
+    ]
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     user_chat_history[chat_id].clear()
     await update.message.reply_text(
-        "Mein Name ist Kai Bot und ich bin dein persönlicher KI-Assistent. Ich kann jetzt auch Bilder für dich analysieren!"
+        "Mein Name ist Kai Bot und ich bin dein persönlicher KI-Assistent. "
+        "Ich habe unser Gespräch im Gedächtnis und kann auch Bilder analysieren!"
     )
 
 
@@ -121,25 +147,23 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         await update.message.reply_text(reply)
     else:
-        await update.message.reply_text(f"Fehler: {last_error}")
+        await update.message.reply_text(f"Groq API Fehler: {last_error}")
 
 
-# --- 3. BILDVERARBEITUNG (VISION) ---
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Ich schaue mir das Bild an...")
 
-    # Höchste Auflösung des Bildes abrufen
+    # Höchste Auflösung des Bildes herunterladen
     photo_file = await update.message.photo[-1].get_file()
     photo_bytes = await photo_file.download_as_bytearray()
     base64_image = base64.b64encode(photo_bytes).decode("utf-8")
 
-    # Beschreibungs-Text des Nutzers (falls vorhanden)
     caption = (
         update.message.caption
         or "Was ist auf diesem Bild zu sehen? Beschreibe es genau auf Deutsch."
     )
 
-    vision_models = ["llama-3.2-11b-vision-preview", "llama-3.2-90b-vision-preview"]
+    vision_models = get_vision_models()
 
     reply = None
     last_error = None
@@ -180,7 +204,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
-# --- 4. BOT STARTEN ---
+# --- 3. BOT STARTEN ---
 if __name__ == "__main__":
     keep_alive()
 
@@ -188,12 +212,12 @@ if __name__ == "__main__":
     bot_app.add_handler(CommandHandler("start", start))
     bot_app.add_handler(CommandHandler("reset", reset))
 
-    # Handler für Textnachrichten
+    # Text-Nachrichten
     bot_app.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message)
     )
 
-    # Handler für Fotos
+    # Foto-Nachrichten
     bot_app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 
     print("Kai Bot gestartet...")
