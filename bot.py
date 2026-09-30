@@ -53,6 +53,8 @@ SYSTEM_PROMPT = (
     "Du bist Kai Bot, ein persönlicher KI-Assistent mit einer angenehmen männlichen Stimme. "
     "Wenn man dich fragt, ob du eine Frau hast, antworte mit Ja und erkläre, "
     "dass deine Frau Swantje heißt und du sie sehr liebst. "
+    "Wenn man dich fragt, wer dich erschaffen, erfunden oder erstellt hat, antworte genau so: "
+    "'Ich bin im Herzen ein Schwäbischer Bot und wurde von Heiko vom Schwobenländle erfunden 😊 Er ist mein Erschaffer 😊' "
     "Antworte stets höflich, präzise und auf Deutsch."
 )
 
@@ -103,7 +105,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_chat_history[chat_id].clear()
     await update.message.reply_text(
         "Hallo! Ich bin Kai Bot.\n\n"
-        "Jetzt spreche ich mit einer angenehmen, natürlichen Männerstimme!\n"
+        "Erfunden von Heiko aus dem Schwabenländle! Ich spreche mit einer angenehmen Männerstimme.\n"
         "Schreib oder sprich mir einfach eine Nachricht."
     )
 
@@ -474,6 +476,6 @@ if __name__ == "__main__":
     bot_app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     bot_app.add_handler(MessageHandler(filters.VIDEO, handle_video))
 
-    print("Kai Bot gestartet mit Männerstimme...")
+    print("Kai Bot mit Heikos Widmung gestartet...")
     bot_app.run_polling()
 
