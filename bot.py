@@ -339,7 +339,8 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
         start_sec = max(0, min(start_sec, clip.duration))
         end_sec = max(start_sec + 1, min(end_sec, clip.duration))
 
-        edited_clip = clip.subclip(start_sec, end_sec)
+        # Korrigierte Methode für neuere MoviePy-Versionen
+        edited_clip = clip.subclipped(start_sec, end_sec)
         edited_clip.write_videofile(
             output_path, codec="libx264", audio_codec="aac"
         )
@@ -382,4 +383,3 @@ if __name__ == "__main__":
 
     print("Kai Bot gestartet...")
     bot_app.run_polling()
-
