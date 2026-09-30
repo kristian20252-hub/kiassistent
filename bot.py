@@ -62,7 +62,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for attempt in range(max_retries):
         try:
             response = ai_client.models.generate_content(
-                model="gemini-3.8-flash",
+                model="gemini-2.0-flash",
                 contents=user_text,
                 config=types.GenerateContentConfig(
                     system_instruction=SYSTEM_PROMPT,
