@@ -21,6 +21,7 @@ from telegram.ext import (
     filters,
 )
 from threading import Thread
+import yt_dlp
 
 # --- 1. WEBSERVER FÜR RENDER HEALTH CHECK ---
 flask_app = Flask("")
@@ -52,7 +53,7 @@ gemini_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
 SYSTEM_PROMPT = (
     "Du bist Kai Bot, ein persönlicher KI-Assistent mit einer angenehmen männlichen Stimme, "
-    "der auch Bilder generieren kann. "
+    "der auch Bilder generieren und YouTube-Videos herunterladen kann. "
     "Wenn man dich fragt, ob du eine Frau hast, antworte mit Ja und erkläre, "
     "dass deine Frau Swantje heißt und du sie sehr liebst. "
     "Wenn man dich fragt, wer dich erschaffen, erfunden oder erstellt hat, antworte genau so: "
@@ -107,8 +108,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_chat_history[chat_id].clear()
     await update.message.reply_text(
         "Hallo! Ich bin Kai Bot.\n\n"
-        "Erfunden von Heiko aus dem Schwabenländle! Ich spreche mit einer angenehmen Männerstimme.\n"
-        "Schreib oder sprich mir einfach eine Nachricht."
+        "Erfunden von Heiko aus dem Schwabenländle! Ich kann Bilder erstellen, Videos schneiden und YouTube-Videos herunterladen.\n"
+        "Schreib mir einfach einen YouTube-Link oder nutze `/youtube [Link]`."
     )
 
 
@@ -138,6 +139,55 @@ async def send_voice_reply(update: Update, text: str):
     except Exception as e:
         print(f"Fehler bei Edge-TTS: {e}")
         await update.message.reply_text(text)
+
+
+# --- YOUTUBE DOWNLOAD FUNKTION ---
+async def download_youtube(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Unterstützt sowohl den /youtube Befehl als auch direkte Links im Text
+    args = context.args
+    url = args[0] if args else update.message.text
+
+    if not url or ("youtube.com" not in url and "youtu.be" not in url):
+        await update.message.reply_text(
+            "Bitte gib einen gültigen YouTube-Link an, z.B. `/youtube https://www.youtube.com/...`"
+        )
+        return
+
+    msg = await update.message.reply_text(
+        "Lade YouTube-Video herunter (bitte hab einen Moment Geduld)..."
+    )
+
+    output_filename = "downloaded_video.mp4"
+    ydl_opts = {
+        "format": "best[ext=mp4]/best",
+        "outtmpl": output_filename,
+        "max_filesize": 50 * 1024 * 1024,  # Telegram Bot Limit beachten (max ~50MB)
+    }
+
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([url])
+
+        if os.path.exists(output_filename):
+            with open(output_filename, "rb") as video_file:
+                await update.message.reply_video(
+                    video=video_file,
+                    caption="Hier ist dein YouTube-Video! 🎬",
+                )
+            await msg.delete()
+        else:
+            await msg.edit_text(
+                "Fehler: Das Video konnte nicht heruntergeladen werden."
+            )
+
+    except Exception as e:
+        await msg.edit_text(
+            f"Fehler beim YouTube-Download (möglicherweise zu groß für Telegram): {e}"
+        )
+
+    finally:
+        if os.path.exists(output_filename):
+            os.remove(output_filename)
 
 
 # --- BILDGENERIERUNG MIT ZUFALLS-SEED GEGEN BLOCKIEREN ---
@@ -267,6 +317,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     lower_text = user_text.lower()
 
+    # Prüfen, ob ein YouTube-Link im Text geschickt wurde
+    if "youtube.com" in user_text or "youtu.be" in user_text:
+        context.args = [user_text]
+        await download_youtube(update, context)
+        return
+
     image_triggers = [
         "erstelle ein bild",
         "erstelle bild",
@@ -352,10 +408,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --- BILD-BEARBEITUNG: TEXT AUF BILD SCHREIBEN ---
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Prüfe ob das Bild als Antwort auf ein anderes Bild oder mit Text geschickt wurde
     caption = update.message.caption or ""
-
-    # Falls der Nutzer per Antwort-Funktion geantwortet hat, holen wir den Text aus der Nachricht
     if not caption and update.message.reply_to_message:
         caption = update.message.reply_to_message.text or ""
 
@@ -410,7 +463,6 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 caption,
                 flags=re.IGNORECASE,
             )
-            # Nimm den letzten Teil nach dem Befehl als Text
             text_to_write = (
                 parts[-1].strip()
                 if len(parts) > 1 and parts[-1].strip()
@@ -431,7 +483,6 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         x = (img.width - text_width) / 2
         y = img.height - text_height - 40
 
-        # Text mit schwarzem Rand und weißem Kern zeichnen für perfekte Lesbarkeit
         draw.text((x - 2, y), text_to_write, font=font, fill=(0, 0, 0))
         draw.text((x + 2, y), text_to_write, font=font, fill=(0, 0, 0))
         draw.text((x, y - 2), text_to_write, font=font, fill=(0, 0, 0))
@@ -514,6 +565,7 @@ if __name__ == "__main__":
     bot_app.add_handler(CommandHandler("start", start))
     bot_app.add_handler(CommandHandler("reset", reset))
     bot_app.add_handler(CommandHandler("bild", generate_image_command))
+    bot_app.add_handler(CommandHandler("youtube", download_youtube))
 
     bot_app.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message)
@@ -522,6 +574,6 @@ if __name__ == "__main__":
     bot_app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     bot_app.add_handler(MessageHandler(filters.VIDEO, handle_video))
 
-    print("Kai Bot mit optimierter Bildbearbeitung gestartet...")
+    print("Kai Bot mit YouTube-Download gestartet...")
     bot_app.run_polling()
 
