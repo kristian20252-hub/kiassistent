@@ -1,8 +1,8 @@
-from collections import defaultdict
 import io
 import os
-from threading import Thread
 import urllib.parse
+from collections import defaultdict
+from threading import Thread
 from flask import Flask
 from google import genai
 from google.genai import types
@@ -127,12 +127,13 @@ async def generate_image_command(
 
     try:
         encoded_prompt = urllib.parse.quote(prompt)
-        # Pollinations.ai ist 100% kostenfrei
-        image_url = (
-            f"https://pollinations.ai/p/{encoded_prompt}?width=1024&height=1024"
-        )
+        image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=1024&nologo=true"
 
-        response = requests.get(image_url, timeout=30)
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        }
+        response = requests.get(image_url, headers=headers, timeout=30)
+
         if response.status_code == 200:
             await update.message.reply_photo(
                 photo=io.BytesIO(response.content),
@@ -183,19 +184,23 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"Fehler: {last_error}")
 
 
-# --- BILDANALYSE (GEMINI KOSTENLOS) ODER BILD-NEUERSTELLUNG ---
+# --- BILDANALYSE ODER BILD-NEUERSTELLUNG ---
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     caption = update.message.caption
 
-    # FALL A: Bild MIT Text -> Generiere ein neues Bild basierend auf dem Wunsch
+    # FALL A: Bild MIT Text -> Erstelle ein dazu passendes Bild
     if caption:
         msg = await update.message.reply_text(
             "Generiere neues Bild basierend auf deinem Text..."
         )
         try:
-            encoded_prompt = urllib.parse.quote(caption)
-            image_url = f"https://pollinations.ai/p/{encoded_prompt}?width=1024&height=1024"
-            response = requests.get(image_url, timeout=30)
+            encoded_prompt = urllib.parse.quote(f"game background, {caption}")
+            image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=1024&nologo=true"
+
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            }
+            response = requests.get(image_url, headers=headers, timeout=30)
 
             if response.status_code == 200:
                 await update.message.reply_photo(
@@ -204,11 +209,14 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
                 await msg.delete()
                 return
+            else:
+                await msg.edit_text("Generierung fehlgeschlagen.")
+                return
         except Exception as e:
             await msg.edit_text(f"Fehler bei der Generierung: {e}")
             return
 
-    # FALL B: Bild OHNE Text -> Bildanalyse mit Gemini (Free Tier)
+    # FALL B: Bild OHNE Text -> Bildanalyse mit Gemini
     if not gemini_client:
         await update.message.reply_text("Fehler: GEMINI_API_KEY fehlt.")
         return
