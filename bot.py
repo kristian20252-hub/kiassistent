@@ -57,12 +57,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
 
-    # Bis zu 4 Versuche bei kurzzeitiger Google-Überlastung
-    max_retries = 4
+    # Bis zu 8 Versuche bei Auslastung
+    max_retries = 8
     for attempt in range(max_retries):
         try:
             response = ai_client.models.generate_content(
-                model="gemini-2.0-flash",
+                model="gemini-3.8-flash",
                 contents=user_text,
                 config=types.GenerateContentConfig(
                     system_instruction=SYSTEM_PROMPT,
@@ -73,20 +73,21 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
         except Exception as e:
             error_str = str(e)
-            # Bei temporärer Überlastung (503/429) kurz warten und nochmals versuchen
+            # Wenn der Server ausgelastet ist, schrittweise länger warten
             if (
                 "503" in error_str
                 or "429" in error_str
                 or "UNAVAILABLE" in error_str
+                or "RESOURCE_EXHAUSTED" in error_str
             ):
-                time.sleep(2)
+                time.sleep( attempt + 1 )
                 continue
             else:
-                await update.message.reply_text(f"Fehler: {e}")
+                await update.message.reply_text(f"API Fehler: {e}")
                 return
 
     await update.message.reply_text(
-        "Google ist gerade stark ausgelastet. Bitte versuche es gleich noch einmal."
+        "Google ist gerade stark ausgelastet. Bitte versuche es in ein paar Sekunden erneut."
     )
 
 
@@ -102,3 +103,4 @@ if __name__ == "__main__":
 
     print("Kai Bot wird gestartet...")
     bot_app.run_polling()
+
