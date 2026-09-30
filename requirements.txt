@@ -2,7 +2,6 @@ python-telegram-bot
 flask
 groq
 google-genai
-replicate
 requests
 pillow
 moviepy
