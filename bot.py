@@ -1,6 +1,6 @@
 import io
 import os
-import re  # Neu zum Extrahieren von Zahlen/Minuten
+import re
 import urllib.parse
 from collections import defaultdict
 from threading import Thread
@@ -9,6 +9,8 @@ from google import genai
 from google.genai import types
 from groq import Groq
 import moviepy.editor as mp
+from PIL import Image, ImageDraw, ImageFont
+from rembg import remove
 import requests
 from telegram import Update
 from telegram.ext import (
@@ -104,7 +106,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Was ich kann:\n"
         "• Chatten: Schreib mir einfach eine Nachricht!\n"
         "• Bilder generieren: Schreib 'Erstelle ein Bild von...' oder `/bild`.\n"
-        "• Bilder analysieren: Sende mir ein Bild ohne Text.\n"
+        "• Bilder bearbeiten: Sende ein Bild mit Text (z.B. 'Schreibe [Text] auf das Bild' oder 'Ändere den Hintergrund').\n"
         "• Videos schneiden: Sende ein Video mit Text (z.B. 'schneide von Minute 2 bis 8')."
     )
 
@@ -153,7 +155,7 @@ async def generate_image_command(
         await msg.edit_text("Zeitüberschreitung beim Bild-Server.")
 
 
-# --- TEXT-CHAT UND AUTOMATISCHE BILDFERKENNUNG ---
+# --- TEXT-CHAT UND AUTOMATISCHE BILDERKENNUNG ---
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     user_text = update.message.text
@@ -188,7 +190,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await msg.edit_text("Zeitüberschreitung beim Generieren.")
             return
 
-    # Normaler Text-Chat über Groq
     user_chat_history[chat_id].append({"role": "user", "content": user_text})
     if len(user_chat_history[chat_id]) > MAX_HISTORY:
         user_chat_history[chat_id] = user_chat_history[chat_id][-MAX_HISTORY:]
@@ -222,64 +223,127 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"Fehler: {last_error}")
 
 
-# --- BILDANALYSE / BEARBEITUNG MIT BILDUNTERSCHRIFT ---
+# --- BILD-BEARBEITUNG: TEXT EINFÜGEN ODER HINTERGRUND WECHSELN ---
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    caption = update.message.caption
+    caption = update.message.caption or ""
+    lower_caption = caption.lower()
 
-    if caption:
-        msg = await update.message.reply_text("Generiere neues Bild...")
-        try:
-            img_bytes = fetch_image_from_pollinations(caption)
-            if img_bytes:
-                await update.message.reply_photo(
-                    photo=io.BytesIO(img_bytes),
-                    caption=f"Neu erstellt für: '{caption}'",
-                )
-                await msg.delete()
-                return
-            else:
-                await msg.edit_text("Server ausgelastet.")
-                return
-        except Exception:
-            await msg.edit_text("Zeitüberschreitung beim Generieren.")
+    if not caption:
+        if not gemini_client:
+            await update.message.reply_text("Fehler: GEMINI_API_KEY fehlt.")
             return
+        msg = await update.message.reply_text("Ich schaue mir das Bild an...")
+        prompt = (
+            "Was ist auf diesem Bild zu sehen? Beschreibe es genau auf Deutsch."
+        )
+        photo_file = await update.message.photo[-1].get_file()
+        photo_bytes = await photo_file.download_as_bytearray()
 
-    if not gemini_client:
-        await update.message.reply_text("Fehler: GEMINI_API_KEY fehlt.")
+        candidate_models = get_gemini_models()
+        response_text = None
+        for model_name in candidate_models:
+            try:
+                response = gemini_client.models.generate_content(
+                    model=model_name,
+                    contents=[
+                        SYSTEM_PROMPT,
+                        types.Part.from_bytes(
+                            data=bytes(photo_bytes), mime_type="image/jpeg"
+                        ),
+                        prompt,
+                    ],
+                )
+                if response.text:
+                    response_text = response.text
+                    break
+            except Exception:
+                continue
+        await msg.edit_text(
+            response_text if response_text else "Fehler bei der Analyse."
+        )
         return
 
-    msg = await update.message.reply_text("Ich schaue mir das Bild an...")
-    prompt = "Was ist auf diesem Bild zu sehen? Beschreibe es genau auf Deutsch."
+    msg = await update.message.reply_text(
+        "Bearbeite dein Bild (Text einfügen / Hintergrund ändern)..."
+    )
     photo_file = await update.message.photo[-1].get_file()
     photo_bytes = await photo_file.download_as_bytearray()
 
-    candidate_models = get_gemini_models()
-    response_text = None
-    last_error = None
+    try:
+        if "hintergrund" in lower_caption or "freistellen" in lower_caption:
+            output_image_bytes = remove(photo_bytes)
+            foreground_img = Image.open(
+                io.BytesIO(output_image_bytes)
+            ).convert("RGBA")
 
-    for model_name in candidate_models:
-        try:
-            response = gemini_client.models.generate_content(
-                model=model_name,
-                contents=[
-                    SYSTEM_PROMPT,
-                    types.Part.from_bytes(
-                        data=bytes(photo_bytes), mime_type="image/jpeg"
-                    ),
-                    prompt,
-                ],
+            bg_prompt = (
+                caption.replace("hintergrund", "")
+                .replace("ändern", "")
+                .strip()
             )
-            if response.text:
-                response_text = response.text
-                break
-        except Exception as e:
-            last_error = e
-            continue
+            if not bg_prompt:
+                bg_prompt = "Ein schöner Strand im Sonnenuntergang"
 
-    if response_text:
-        await msg.edit_text(response_text)
-    else:
-        await msg.edit_text(f"Bildanalyse-Fehler: {last_error}")
+            bg_bytes = fetch_image_from_pollinations(bg_prompt)
+            if bg_bytes:
+                bg_img = (
+                    Image.open(io.BytesIO(bg_bytes))
+                    .convert("RGBA")
+                    .resize(foreground_img.size)
+                )
+                bg_img.paste(foreground_img, (0, 0), foreground_img)
+
+                output_io = io.BytesIO()
+                bg_img.convert("RGB").save(output_io, format="JPEG")
+                output_io.seek(0)
+
+                await update.message.reply_photo(
+                    photo=output_io, caption="Hintergrund erfolgreich geändert!"
+                )
+                await msg.delete()
+                return
+        else:
+            img = Image.open(io.BytesIO(photo_bytes)).convert("RGB")
+            draw = ImageDraw.Draw(img)
+
+            text_to_write = caption
+            if "schreibe" in lower_caption:
+                parts = re.split(r"schreibe", caption, flags=re.IGNORECASE)
+                if len(parts) > 1:
+                    text_to_write = parts[1].strip()
+
+            try:
+                font = ImageFont.truetype(
+                    "DejaVuSans-Bold.ttf", int(img.height / 20)
+                )
+            except Exception:
+                font = ImageFont.load_default()
+
+            bbox = draw.textbbox((0, 0), text_to_write, font=font)
+            text_width = bbox[2] - bbox[0]
+            text_height = bbox[3] - bbox[1]
+
+            x = (img.width - text_width) / 2
+            y = img.height - text_height - 40
+
+            draw.text((x - 2, y), text_to_write, font=font, fill=(0, 0, 0))
+            draw.text((x + 2, y), text_to_write, font=font, fill=(0, 0, 0))
+            draw.text((x, y - 2), text_to_write, font=font, fill=(0, 0, 0))
+            draw.text((x, y + 2), text_to_write, font=font, fill=(0, 0, 0))
+            draw.text((x, y), text_to_write, font=font, fill=(255, 255, 255))
+
+            output_io = io.BytesIO()
+            img.save(output_io, format="JPEG")
+            output_io.seek(0)
+
+            await update.message.reply_photo(
+                photo=output_io, caption="Text erfolgreich hinzugefügt!"
+            )
+            await msg.delete()
+            return
+
+    except Exception as e:
+        await msg.edit_text(f"Fehler bei der Bildbearbeitung: {e}")
 
 
 # --- VIDEO-SCHNITT MIT MINUTEN-ERKENNUNG ---
@@ -298,26 +362,20 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         clip = mp.VideoFileClip(input_path)
 
-        # Standardwerte (falls keine Minuten angegeben sind: erste 10 Sekunden)
         start_sec = 0
         end_sec = min(clip.duration, 10)
 
-        # Suche nach Mustern wie "von Minute X bis Y" im Text
         numbers = [int(num) for num in re.findall(r"\d+", caption)]
         if len(numbers) >= 2:
-            # Annahme: Nutzer meint Minuten -> in Sekunden umrechnen (* 60)
             start_sec = numbers[0] * 60
             end_sec = numbers[1] * 60
         elif len(numbers) == 1:
-            # Falls nur eine Zahl genannt wird (z.B. "schneide die ersten X Minuten")
             end_sec = numbers[0] * 60
 
-        # Begrenzen, damit es nicht über die echte Videolänge hinausgeht
         start_sec = max(0, min(start_sec, clip.duration))
         end_sec = max(start_sec + 1, min(end_sec, clip.duration))
 
-        # Schnitt ausführen
-        edited_clip = clip.subclipped(start_sec, end_sec)
+        edited_clip = clip.subclip(start_sec, end_sec)
         edited_clip.write_videofile(
             output_path, codec="libx264", audio_codec="aac"
         )
