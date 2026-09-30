@@ -140,9 +140,11 @@ async def generate_image_command(
 
         if output:
             image_url = (
-                output[0] if isinstance(output, list) else str(output)
+                output[0]
+                if isinstance(output, list)
+                else getattr(output, "url", str(output))
             )
-            img_data = requests.get(image_url).content
+            img_data = requests.get(str(image_url)).content
             await update.message.reply_photo(
                 photo=io.BytesIO(img_data),
                 caption=f"Erstellt für: {prompt}",
@@ -204,27 +206,32 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             photo_file = await update.message.photo[-1].get_file()
             photo_bytes = await photo_file.download_as_bytearray()
 
-            # Bildbearbeitung über Instruct-Pix2Pix / Replicate
+            image_stream = io.BytesIO(photo_bytes)
+            image_stream.name = "input_image.jpg"
+
+            # Verwende instruct-pix2pix zur Bildbearbeitung
             output = replicate.run(
                 "timothybrooks/instruct-pix2pix:30c1d0b916a6f8ef220b710813258c2129b864421147d01f507db2388c982bf9",
-                input={"image": io.BytesIO(photo_bytes), "prompt": caption},
+                input={"image": image_stream, "prompt": caption},
             )
 
             if output:
-                image_url = (
-                    output[0] if isinstance(output, list) else str(output)
+                img_url = (
+                    output[0]
+                    if isinstance(output, list)
+                    else getattr(output, "url", str(output))
                 )
-                img_data = requests.get(image_url).content
+                img_data = requests.get(str(img_url)).content
                 await update.message.reply_photo(
                     photo=io.BytesIO(img_data),
-                    caption=f"Bearbeitet mit Anweisung: '{caption}'",
+                    caption=f"Bearbeitet: '{caption}'",
                 )
                 await msg.delete()
                 return
         except Exception as e:
-            print(
-                f"Bildbearbeitung fehlgeschlagen, wechsle zur Analyse: {e}"
-            )
+            print(f"Bildbearbeitung fehlgeschlagen: {e}")
+            await msg.edit_text(f"Fehler bei der Bildbearbeitung: {e}")
+            return
 
     # FALL B: Bild OHNE Bildunterschrift -> BILD ANALYSIEREN
     if not gemini_client:
