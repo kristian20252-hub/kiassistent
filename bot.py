@@ -51,7 +51,6 @@ async def bild_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             input={"prompt": prompt}
         )
         
-        # Das erste generierte Bild senden
         if output:
             image_url = output[0] if isinstance(output, list) else output
             await update.message.reply_photo(photo=image_url, caption=f"✨ *{prompt}*", parse_mode="Markdown")
@@ -127,6 +126,5 @@ telegram_app.add_handler(MessageHandler(filters.TEXT | filters.PHOTO, handle_mes
 
 
 if __name__ == "__main__":
-    # Telegram Bot-App initialisieren
     telegram_app.run_polling()
 
