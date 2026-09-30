@@ -1,9 +1,7 @@
 import os
-import time
 from threading import Thread
 from flask import Flask
-from google import genai
-from google.genai import types
+from groq import Groq
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
@@ -13,13 +11,13 @@ from telegram.ext import (
     filters,
 )
 
-# --- 1. WEBSERVER FÜR RENDER ---
+# --- 1. WEBSERVER FÜR RENDER HEALTH CHECK ---
 flask_app = Flask("")
 
 
 @flask_app.route("/")
 def home():
-    return "Kai Bot läuft!"
+    return "Kai Bot läuft über Groq!"
 
 
 def run_flask():
@@ -33,11 +31,12 @@ def keep_alive():
     t.start()
 
 
-# --- 2. TELEGRAM & GEMINI BOT LOGIK ---
+# --- 2. TELEGRAM & GROQ BOT LOGIK ---
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 
-ai_client = genai.Client(api_key=GEMINI_API_KEY)
+# Groq Client Initialisierung
+groq_client = Groq(api_key=GROQ_API_KEY)
 
 SYSTEM_PROMPT = (
     "Du bist Kai Bot. Wenn man dich nach deinem Namen oder wer du bist fragt, "
@@ -57,36 +56,21 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
 
-    max_retries = 5
-    for attempt in range(max_retries):
-        try:
-            # Exakt von Google gefordertes Modell
-            response = ai_client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=user_text,
-                config=types.GenerateContentConfig(
-                    system_instruction=SYSTEM_PROMPT,
-                ),
-            )
-            if response and response.text:
-                await update.message.reply_text(response.text)
-                return
-        except Exception as e:
-            error_str = str(e)
-            if (
-                "503" in error_str
-                or "429" in error_str
-                or "RESOURCE_EXHAUSTED" in error_str
-            ):
-                time.sleep(3)
-                continue
-            else:
-                await update.message.reply_text(f"API Fehler: {e}")
-                return
+    try:
+        response = groq_client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_text},
+            ],
+            temperature=0.7,
+        )
 
-    await update.message.reply_text(
-        "Google ist gerade stark ausgelastet. Bitte versuche es in ein paar Sekunden erneut."
-    )
+        reply = response.choices[0].message.content
+        if reply:
+            await update.message.reply_text(reply)
+    except Exception as e:
+        await update.message.reply_text(f"Groq API Fehler: {e}")
 
 
 # --- 3. BOT STARTEN ---
