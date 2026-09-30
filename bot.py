@@ -79,7 +79,6 @@ def get_chat_models():
 
 
 def get_gemini_models():
-    """Dynamische Ermittlung verfügbarer Gemini-Modelle."""
     try:
         models_list = gemini_client.models.list()
         available = []
@@ -103,8 +102,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Hallo! Ich bin Kai Bot.\n\n"
         "Was ich kann:\n"
         "• Chatten: Schreib mir einfach eine Nachricht!\n"
-        "• Bilder analysieren: Sende mir ein Bild im Chat.\n"
-        "• Bilder erstellen: Nutze den Befehl `/bild <Beschreibung>`."
+        "• Bilder analysieren: Sende mir ein Bild ohne Text.\n"
+        "• Bilder bearbeiten: Sende mir ein Bild MIT Bildunterschrift (z.B. 'Ändere den Hintergrund zu Schnee').\n"
+        "• Bilder neu erstellen: Nutze den Befehl `/bild <Beschreibung>`."
     )
 
 
@@ -193,8 +193,40 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"Fehler: {last_error}")
 
 
-# --- BILDANALYSE VIA GEMINI ---
+# --- BILDANALYSE (GEMINI) ODER BILDBEARBEITUNG (REPLICATE) ---
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    caption = update.message.caption
+
+    # FALL A: Bild MIT Bildunterschrift -> BILD BEARBEITEN
+    if caption and REPLICATE_API_TOKEN:
+        msg = await update.message.reply_text("Bearbeite dein Bild...")
+        try:
+            photo_file = await update.message.photo[-1].get_file()
+            photo_bytes = await photo_file.download_as_bytearray()
+
+            # Bildbearbeitung über Instruct-Pix2Pix / Replicate
+            output = replicate.run(
+                "timothybrooks/instruct-pix2pix:30c1d0b916a6f8ef220b710813258c2129b864421147d01f507db2388c982bf9",
+                input={"image": io.BytesIO(photo_bytes), "prompt": caption},
+            )
+
+            if output:
+                image_url = (
+                    output[0] if isinstance(output, list) else str(output)
+                )
+                img_data = requests.get(image_url).content
+                await update.message.reply_photo(
+                    photo=io.BytesIO(img_data),
+                    caption=f"Bearbeitet mit Anweisung: '{caption}'",
+                )
+                await msg.delete()
+                return
+        except Exception as e:
+            print(
+                f"Bildbearbeitung fehlgeschlagen, wechsle zur Analyse: {e}"
+            )
+
+    # FALL B: Bild OHNE Bildunterschrift -> BILD ANALYSIEREN
     if not gemini_client:
         await update.message.reply_text(
             "Fehler: GEMINI_API_KEY fehlt in Render."
@@ -203,8 +235,8 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     msg = await update.message.reply_text("Ich schaue mir das Bild an...")
 
-    caption = (
-        update.message.caption
+    prompt = (
+        caption
         or "Was ist auf diesem Bild zu sehen? Beschreibe es genau auf Deutsch."
     )
     photo_file = await update.message.photo[-1].get_file()
@@ -223,7 +255,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     types.Part.from_bytes(
                         data=bytes(photo_bytes), mime_type="image/jpeg"
                     ),
-                    caption,
+                    prompt,
                 ],
             )
             if response.text:
