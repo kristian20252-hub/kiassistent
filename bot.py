@@ -45,6 +45,13 @@ SYSTEM_PROMPT = (
     "Antworte immer höflich, präzise und in korrektem Hochdeutsch."
 )
 
+# Liste verfügbarer Modelle für automatischen Fallback
+MODELS_TO_TRY = [
+    "llama-3.3-70b-versatile",
+    "llama-3.1-8b-instant",
+    "llama3-8b-8192",
+]
+
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
@@ -54,22 +61,32 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
+    response_sent = False
 
-    try:
-        response = groq_client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_text},
-            ],
-            temperature=0.7,
+    for model_name in MODELS_TO_TRY:
+        try:
+            response = groq_client.chat.completions.create(
+                model=model_name,
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": user_text},
+                ],
+                temperature=0.7,
+            )
+
+            reply = response.choices[0].message.content
+            if reply:
+                await update.message.reply_text(reply)
+                response_sent = True
+                break
+        except Exception as e:
+            # Falls ein Modell nicht antwortet, wird das nächste probiert
+            continue
+
+    if not response_sent:
+        await update.message.reply_text(
+            "Groq API Fehler: Keines der konfigurierten Modelle konnte erreicht werden. Bitte überprüfe deinen API Key."
         )
-
-        reply = response.choices[0].message.content
-        if reply:
-            await update.message.reply_text(reply)
-    except Exception as e:
-        await update.message.reply_text(f"Groq API Fehler: {e}")
 
 
 # --- 3. BOT STARTEN ---
