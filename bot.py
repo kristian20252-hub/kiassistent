@@ -103,7 +103,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Was ich kann:\n"
         "• Chatten: Schreib mir einfach eine Nachricht!\n"
         "• Bilder analysieren: Sende mir ein Bild ohne Text.\n"
-        "• Bilder bearbeiten: Sende mir ein Bild MIT Bildunterschrift (z.B. 'Ändere den Hintergrund zu Schnee').\n"
+        "• Bilder bearbeiten: Sende mir ein Bild MIT Bildunterschrift.\n"
         "• Bilder neu erstellen: Nutze den Befehl `/bild <Beschreibung>`."
     )
 
@@ -209,10 +209,14 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             image_stream = io.BytesIO(photo_bytes)
             image_stream.name = "input_image.jpg"
 
-            # Replicate Bild-zu-Bild Aufruf ohne veralteten Hash
+            # Stabiles Image-to-Image Modell auf Replicate verwenden (SDXL Image-to-Image)
             output = replicate.run(
-                "timothybrooks/instruct-pix2pix",
-                input={"image": image_stream, "prompt": caption},
+                "stability-ai/sdxl:39ed52f2a78e932281e6e8159478a161e2e214d2320b5220c5b07223edcb247e",
+                input={
+                    "image": image_stream,
+                    "prompt": caption,
+                    "prompt_strength": 0.6,
+                },
             )
 
             if output:
