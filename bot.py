@@ -1,5 +1,6 @@
 import io
 import os
+import random
 import re
 import urllib.parse
 from collections import defaultdict
@@ -139,10 +140,11 @@ async def send_voice_reply(update: Update, text: str):
         await update.message.reply_text(text)
 
 
-# --- BILDGENERIERUNG VIA POLLINATIONS ---
+# --- BILDGENERIERUNG MIT ZUFALLS-SEED GEGEN BLOCKIEREN ---
 def fetch_image_from_pollinations(prompt: str):
     encoded_prompt = urllib.parse.quote(prompt)
-    url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=1024&nologo=true"
+    seed = random.randint(1, 1000000)
+    url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=1024&seed={seed}&nologo=true"
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
     }
@@ -265,7 +267,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     lower_text = user_text.lower()
 
-    # Erweiterte Erkennung für Bildwünsche
     image_triggers = [
         "erstelle ein bild",
         "erstelle bild",
@@ -316,7 +317,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await msg.edit_text("Zeitüberschreitung beim Generieren.")
             return
 
-    # Normaler Text-Chat Verlauf
     user_chat_history[chat_id].append({"role": "user", "content": user_text})
     if len(user_chat_history[chat_id]) > MAX_HISTORY:
         user_chat_history[chat_id] = user_chat_history[chat_id][-MAX_HISTORY:]
@@ -357,7 +357,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not gemini_client:
             await update.message.reply_text("Fehler: GEMINI_API_KEY fehlt.")
             return
-        msg = await update.message.reply_text("I schaue mir das Bild an...")
+        msg = await update.message.reply_text("Ich schaue mir das Bild an...")
         prompt = (
             "Was ist auf diesem Bild zu sehen? Beschreibe es genau auf Deutsch."
         )
@@ -507,6 +507,6 @@ if __name__ == "__main__":
     bot_app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     bot_app.add_handler(MessageHandler(filters.VIDEO, handle_video))
 
-    print("Kai Bot gestartet...")
+    print("Kai Bot mit Seed-Optimierung gestartet...")
     bot_app.run_polling()
 
