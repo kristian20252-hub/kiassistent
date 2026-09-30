@@ -3,6 +3,7 @@ import os
 from collections import defaultdict
 from threading import Thread
 from flask import Flask
+from google import genai
 from groq import Groq
 from telegram import Update
 from telegram.ext import (
@@ -19,7 +20,7 @@ flask_app = Flask("")
 
 @flask_app.route("/")
 def home():
-    return "Kai Bot läuft mit Text-, Speicher- und Bilderkennung!"
+    return "Kai Bot läuft mit Text- und Bilderkennung!"
 
 
 def run_flask():
@@ -33,11 +34,13 @@ def keep_alive():
     t.start()
 
 
-# --- 2. TELEGRAM & GROQ BOT LOGIK ---
+# --- 2. TELEGRAM, GROQ & GEMINI BOT LOGIK ---
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
-groq_client = Groq(api_key=GROQ_API_KEY)
+groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
+gemini_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
 SYSTEM_PROMPT = (
     "Du bist Kai Bot. Wenn man dich nach deinem Namen oder wer du bist fragt, "
@@ -52,7 +55,7 @@ MAX_HISTORY = 10
 
 
 def get_chat_models():
-    """Holt alle aktiven, für Chat nutzbaren Modelle von Groq."""
+    """Holt alle aktiven Chat-Modelle von Groq."""
     EXCLUDED_KEYWORDS = [
         "guard",
         "whisper",
@@ -69,11 +72,7 @@ def get_chat_models():
             if hasattr(m, "id")
             and not any(kw in m.id.lower() for kw in EXCLUDED_KEYWORDS)
         ]
-
-        priority = [
-            "llama-3.3-70b-versatile",
-            "llama-3.1-8b-instant",
-        ]
+        priority = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
         sorted_models = [m for m in priority if m in valid]
         for m in valid:
             if m not in sorted_models:
@@ -139,58 +138,39 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Ich schaue mir das Bild an...")
 
+    if not gemini_client:
+        await update.message.reply_text(
+            "Fehler: GEMINI_API_KEY ist in Render nicht eingerichtet."
+        )
+        return
+
     photo_file = await update.message.photo[-1].get_file()
     photo_bytes = await photo_file.download_as_bytearray()
-    base64_image = base64.b64encode(photo_bytes).decode("utf-8")
 
     caption = (
         update.message.caption
         or "Was ist auf diesem Bild zu sehen? Beschreibe es genau auf Deutsch."
     )
 
-    # Nur verifizierte, in Groq frei verfügbare Vision-Modell-IDs
-    vision_candidates = [
-        "llama-3.2-11b-vision-instruct",
-        "llama-3.2-11b-instant",
-    ]
-
-    reply = None
-    last_error = None
-
-    for model in vision_candidates:
-        try:
-            response = groq_client.chat.completions.create(
-                model=model,
-                messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": caption},
-                            {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": f"data:image/jpeg;base64,{base64_image}"
-                                },
-                            },
-                        ],
-                    },
-                ],
-                temperature=0.7,
-            )
-            reply = response.choices[0].message.content
-            if reply:
-                break
-        except Exception as e:
-            last_error = e
-            continue
-
-    if reply:
-        await update.message.reply_text(reply)
-    else:
-        await update.message.reply_text(
-            f"Bild konnte nicht analysiert werden: {last_error}"
+    try:
+        response = gemini_client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=[
+                SYSTEM_PROMPT,
+                genai.types.Part.from_bytes(
+                    data=bytes(photo_bytes), mime_type="image/jpeg"
+                ),
+                caption,
+            ],
         )
+        if response.text:
+            await update.message.reply_text(response.text)
+        else:
+            await update.message.reply_text(
+                "Bild konnte nicht analysiert werden."
+            )
+    except Exception as e:
+        await update.message.reply_text(f"Bildanalyse-Fehler: {e}")
 
 
 # --- 3. BOT STARTEN ---
@@ -201,12 +181,9 @@ if __name__ == "__main__":
     bot_app.add_handler(CommandHandler("start", start))
     bot_app.add_handler(CommandHandler("reset", reset))
 
-    # Text-Nachrichten
     bot_app.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message)
     )
-
-    # Foto-Nachrichten
     bot_app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 
     print("Kai Bot gestartet...")
