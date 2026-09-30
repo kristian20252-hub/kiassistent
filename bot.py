@@ -47,11 +47,10 @@ SYSTEM_PROMPT = (
     "um Kontext zu verstehen."
 )
 
-# Aktuelle und aktive Groq-Modelle
+# Aktive Modelle auf Groq
 MODELS_TO_TRY = [
     "llama-3.3-70b-versatile",
     "llama-3.1-8b-instant",
-    "gemma2-9b-it",
 ]
 
 # Gedächtnis für jeden Nutzer
