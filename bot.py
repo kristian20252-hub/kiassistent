@@ -154,7 +154,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         response = gemini_client.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-3.8-flash",
             contents=[
                 SYSTEM_PROMPT,
                 genai.types.Part.from_bytes(
@@ -188,4 +188,3 @@ if __name__ == "__main__":
 
     print("Kai Bot gestartet...")
     bot_app.run_polling()
-
