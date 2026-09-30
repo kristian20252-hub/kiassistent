@@ -52,15 +52,39 @@ user_chat_history = defaultdict(list)
 MAX_HISTORY = 10
 
 
-def get_available_models():
-    """Liest alle Modell-IDs aus, die deinem API-Key bei Groq zur Verfügung stehen."""
+def get_chat_models():
+    """Liest alle Modelle bei Groq aus und filtert reine Chat-Modelle heraus."""
+    # Ausschluss-Schlüsselwörter für Spezialmodelle (Guard, Whisper, etc.)
+    EXCLUDED_KEYWORDS = ["guard", "whisper", "safeguard", "embed"]
+
     try:
         models_page = groq_client.models.list()
-        # Filtert nur aktionsfähige Modell-IDs heraus
-        return [m.id for m in models_page.data if hasattr(m, "id")]
+        valid_chat_models = []
+        for m in models_page.data:
+            model_id = getattr(m, "id", "")
+            # Nur Modelle aufnehmen, die kein Spezialmodul sind
+            if model_id and not any(
+                kw in model_id.lower() for kw in EXCLUDED_KEYWORDS
+            ):
+                valid_chat_models.append(model_id)
+
+        # Priorisierte Standard-Chatmodelle bevorzugen
+        priority_models = [
+            "llama-3.3-70b-versatile",
+            "llama-3.1-8b-instant",
+            "meta-llama/llama-4-scout-17b-16e-instruct",
+        ]
+
+        # Wenn eines der bevorzugten Modelle vorhanden ist, ganz nach vorne stellen
+        sorted_models = [m for m in priority_models if m in valid_chat_models]
+        for m in valid_chat_models:
+            if m not in sorted_models:
+                sorted_models.append(m)
+
+        return sorted_models
     except Exception as e:
         print(f"Fehler beim Abrufen der Modellliste: {e}")
-        return []
+        return ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -92,12 +116,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_chat_history[chat_id]
     )
 
-    available_models = get_available_models()
+    available_models = get_chat_models()
 
     reply = None
     last_error = None
 
-    # Iteriert durch alle für deinen Account freigeschalteten Modelle
+    # Testet nacheinander nur gültige Chat-Modelle
     for model in available_models:
         try:
             response = groq_client.chat.completions.create(
@@ -117,7 +141,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(reply)
     else:
         await update.message.reply_text(
-            f"Groq API Fehler: Keine funktionierenden Modelle gefunden. Letzter Fehler: {last_error}"
+            f"Groq API Fehler: Kein passendes Chat-Modell gefunden. Fehler: {last_error}"
         )
 
 
