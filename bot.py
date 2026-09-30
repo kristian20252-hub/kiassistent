@@ -101,8 +101,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Hallo! Ich bin Kai Bot (100% Kostenlos!).\n\n"
         "Was ich kann:\n"
         "• Chatten: Schreib mir einfach eine Nachricht!\n"
-        "• Bilder analysieren: Sende mir ein Bild ohne Text.\n"
-        "• Bilder neu erstellen: Sende ein Bild mit Text ODER nutze `/bild <Beschreibung>`."
+        "• Bilder generieren: Schreib 'Erstelle ein Bild von...' ODER nutze `/bild <Beschreibung>`.\n"
+        "• Bilder analysieren: Sende mir ein Bild ohne Text."
     )
 
 
@@ -112,15 +112,13 @@ async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Chat-Verlauf zurückgesetzt!")
 
 
-# --- HILFSFUNKTION FÜR BILDGENERIERUNG ---
+# --- HILFSFUNKTION FÜR BILDGENERIERUNG VIA POLLINATIONS ---
 def fetch_image_from_pollinations(prompt: str):
     encoded_prompt = urllib.parse.quote(prompt)
     url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=1024&nologo=true"
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
     }
-
-    # Timeout auf 60 Sekunden erhöht
     response = requests.get(url, headers=headers, timeout=60)
     if response.status_code == 200:
         return response.content
@@ -138,9 +136,7 @@ async def generate_image_command(
         )
         return
 
-    msg = await update.message.reply_text(
-        "Erstelle dein Bild kostenlos (kann bis zu 1 Minute dauern)..."
-    )
+    msg = await update.message.reply_text("Erstelle dein Bild kostenlos...")
 
     try:
         img_bytes = fetch_image_from_pollinations(prompt)
@@ -151,19 +147,54 @@ async def generate_image_command(
             await msg.delete()
         else:
             await msg.edit_text(
-                "Der Bild-Server ist derzeit ausgelastet. Bitte versuche es in wenigen Minuten erneut."
+                "Der Bild-Server ist derzeit ausgelastet. Bitte versuche es gleich noch einmal."
             )
-    except Exception as e:
+    except Exception:
         await msg.edit_text(
             "Zeitüberschreitung beim Bild-Server. Bitte versuche es gleich noch einmal."
         )
 
 
-# --- TEXT-CHAT VIA GROQ ---
+# --- TEXT-CHAT ODER AUTOMATISCHE BILDFERKENNUNG ---
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     user_text = update.message.text
+    lower_text = user_text.lower()
 
+    # Prüfung, ob der Nutzer im normalen Chat ein Bild anfordert
+    image_trigger_words = [
+        "erstelle ein bild",
+        "generiere ein bild",
+        "zeichne",
+        "mal ein bild",
+        "erstelle bild",
+        "bild von",
+    ]
+    if any(trigger in lower_text for trigger in image_trigger_words):
+        msg = await update.message.reply_text(
+            "Erstelle dein Bild kostenlos..."
+        )
+        try:
+            img_bytes = fetch_image_from_pollinations(user_text)
+            if img_bytes:
+                await update.message.reply_photo(
+                    photo=io.BytesIO(img_bytes),
+                    caption=f"Erstellt für: {user_text}",
+                )
+                await msg.delete()
+                return
+            else:
+                await msg.edit_text(
+                    "Bild-Server ausgelastet. Versuche es bitte nochmal."
+                )
+                return
+        except Exception:
+            await msg.edit_text(
+                "Zeitüberschreitung. Bitte versuche es gleich nochmal."
+            )
+            return
+
+    # Normaler Text-Chat über Groq
     user_chat_history[chat_id].append({"role": "user", "content": user_text})
     if len(user_chat_history[chat_id]) > MAX_HISTORY:
         user_chat_history[chat_id] = user_chat_history[chat_id][-MAX_HISTORY:]
@@ -197,19 +228,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"Fehler: {last_error}")
 
 
-# --- BILDANALYSE ODER BILD-NEUERSTELLUNG ---
+# --- BILDANALYSE ODER NEU-GENERIERUNG MIT BILDUNTERSCHRIFT ---
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     caption = update.message.caption
 
-    # FALL A: Bild MIT Text -> Erstelle neues Bild
+    # FALL A: Bild MIT Text -> Generiere ein neues Bild
     if caption:
-        msg = await update.message.reply_text(
-            "Generiere neues Bild... (kann ca. 30-60 Sek. dauern)"
-        )
+        msg = await update.message.reply_text("Generiere neues Bild...")
         try:
-            full_prompt = f"game scene, {caption}"
-            img_bytes = fetch_image_from_pollinations(full_prompt)
-
+            img_bytes = fetch_image_from_pollinations(caption)
             if img_bytes:
                 await update.message.reply_photo(
                     photo=io.BytesIO(img_bytes),
@@ -218,14 +245,10 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await msg.delete()
                 return
             else:
-                await msg.edit_text(
-                    "Der Server war ausgelastet. Bitte versuche es noch einmal."
-                )
+                await msg.edit_text("Server ausgelastet. Versuche es nochmal.")
                 return
         except Exception:
-            await msg.edit_text(
-                "Zeitüberschreitung. Der Server braucht gerade etwas länger, bitte versuche es gleich noch einmal."
-            )
+            await msg.edit_text("Zeitüberschreitung beim Generieren.")
             return
 
     # FALL B: Bild OHNE Text -> Bildanalyse mit Gemini
@@ -285,3 +308,4 @@ if __name__ == "__main__":
 
     print("Kai Bot gestartet...")
     bot_app.run_polling()
+
