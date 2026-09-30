@@ -43,25 +43,24 @@ ai_client = genai.Client(api_key=GEMINI_API_KEY)
 # Identität für den Bot festlegen
 SYSTEM_PROMPT = (
     "Du bist Kai Bot. Wenn man dich nach deinem Namen oder wer du bist fragt, "
-    "antworte exakt: 'Mein Name ist Kai Bot und ich bin dein persönlicher Schwäbischer KI-Assistent.' "
-    "Sprich ansonsten verständliches Schwäbisch mit dem Nutzer, außer er bittet dich ausdrücklich darum, Hochdeutsch zu sprechen."
+    "antworte exakt: 'Mein Name ist Kai Bot und ich bin dein persönlicher KI-Assistent.' "
+    "Antworte immer höflich, präzise und in korrektem Hochdeutsch."
 )
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "Mein Name ist Kai Bot und ich bin dein persönlicher Schwäbischer KI-Assistent."
+        "Mein Name ist Kai Bot und ich bin dein persönlicher KI-Assistent."
     )
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
 
-    # Versuche es zuerst mit dem Hauptmodell und fallback bei Überlastung
-    models_to_try = ["gemini-3.8-flash", "gemini-2.5-flash"]
+    models = ["gemini-2.5-flash", "gemini-1.5-flash"]
 
-    for model_name in models_to_try:
-        for attempt in range(2):
+    for model_name in models:
+        for attempt in range(3):
             try:
                 response = ai_client.models.generate_content(
                     model=model_name,
@@ -70,18 +69,23 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         system_instruction=SYSTEM_PROMPT,
                     ),
                 )
-                await update.message.reply_text(response.text)
-                return
+                if response and response.text:
+                    await update.message.reply_text(response.text)
+                    return
             except Exception as e:
-                # Bei Serverüberlastung oder Rate-Limit kurz warten
-                if "503" in str(e) or "429" in str(e):
-                    time.sleep(1.5)
+                error_str = str(e)
+                if (
+                    "503" in error_str
+                    or "429" in error_str
+                    or "RESOURCE_EXHAUSTED" in error_str
+                ):
+                    time.sleep(1.5 * (attempt + 1))
                     continue
-                break
+                else:
+                    break
 
-    # Falls alle Versuche fehlschlagen:
     await update.message.reply_text(
-        "Gschwind Geduld bitte, die Server send grad arg beschäftigt! Probier's glei nochmal."
+        "Die Server von Google sind derzeit leider stark ausgelastet. Bitte versuche es in einem kurzen Moment erneut."
     )
 
 
