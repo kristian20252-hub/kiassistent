@@ -1,5 +1,6 @@
 import io
 import os
+import re  # Neu zum Extrahieren von Zahlen/Minuten
 import urllib.parse
 from collections import defaultdict
 from threading import Thread
@@ -7,6 +8,7 @@ from flask import Flask
 from google import genai
 from google.genai import types
 from groq import Groq
+import moviepy.editor as mp
 import requests
 from telegram import Update
 from telegram.ext import (
@@ -101,8 +103,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Hallo! Ich bin Kai Bot (100% Kostenlos!).\n\n"
         "Was ich kann:\n"
         "• Chatten: Schreib mir einfach eine Nachricht!\n"
-        "• Bilder generieren: Schreib z.B. 'Erstelle ein Bild von...' ODER Nutze `/bild <Beschreibung>`.\n"
-        "• Bilder analysieren: Sende mir ein Bild ohne Text."
+        "• Bilder generieren: Schreib 'Erstelle ein Bild von...' oder `/bild`.\n"
+        "• Bilder analysieren: Sende mir ein Bild ohne Text.\n"
+        "• Videos schneiden: Sende ein Video mit Text (z.B. 'schneide von Minute 2 bis 8')."
     )
 
 
@@ -125,7 +128,6 @@ def fetch_image_from_pollinations(prompt: str):
     return None
 
 
-# --- BEFEHL: /bild ---
 async def generate_image_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ):
@@ -146,22 +148,17 @@ async def generate_image_command(
             )
             await msg.delete()
         else:
-            await msg.edit_text(
-                "Der Bild-Server ist derzeit ausgelastet. Bitte versuche es gleich noch einmal."
-            )
+            await msg.edit_text("Der Bild-Server ist derzeit ausgelastet.")
     except Exception:
-        await msg.edit_text(
-            "Zeitüberschreitung beim Bild-Server. Bitte versuche es gleich noch einmal."
-        )
+        await msg.edit_text("Zeitüberschreitung beim Bild-Server.")
 
 
-# --- TEXT-CHAT UND AUTOMATISCHE ERKENNUNG VON BILD-WÜNSCHEN ---
+# --- TEXT-CHAT UND AUTOMATISCHE BILDFERKENNUNG ---
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     user_text = update.message.text
     lower_text = user_text.lower()
 
-    # Auslöser-Begriffe für Bildgenerierung abfangen
     image_triggers = [
         "erstelle ein bild",
         "generiere ein bild",
@@ -171,8 +168,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "bild von",
         "mach ein bild",
     ]
-
-    # Wenn der Text nach einem Bild fragt, generiere es direkt:
     if any(trigger in lower_text for trigger in image_triggers):
         msg = await update.message.reply_text(
             "Erstelle dein Bild kostenlos..."
@@ -187,14 +182,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await msg.delete()
                 return
             else:
-                await msg.edit_text(
-                    "Bild-Server ist ausgelastet. Bitte gleich nochmal versuchen."
-                )
+                await msg.edit_text("Bild-Server ist ausgelastet.")
                 return
         except Exception:
-            await msg.edit_text(
-                "Zeitüberschreitung. Der Bild-Server braucht gerade länger, bitte erneut versuchen."
-            )
+            await msg.edit_text("Zeitüberschreitung beim Generieren.")
             return
 
     # Normaler Text-Chat über Groq
@@ -235,7 +226,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     caption = update.message.caption
 
-    # Bild MIT Text -> Erstelle neues Bild
     if caption:
         msg = await update.message.reply_text("Generiere neues Bild...")
         try:
@@ -248,21 +238,17 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await msg.delete()
                 return
             else:
-                await msg.edit_text(
-                    "Server ausgelastet. Versuche es nochmal."
-                )
+                await msg.edit_text("Server ausgelastet.")
                 return
         except Exception:
             await msg.edit_text("Zeitüberschreitung beim Generieren.")
             return
 
-    # Bild OHNE Text -> Analyse durch Gemini
     if not gemini_client:
         await update.message.reply_text("Fehler: GEMINI_API_KEY fehlt.")
         return
 
     msg = await update.message.reply_text("Ich schaue mir das Bild an...")
-
     prompt = "Was ist auf diesem Bild zu sehen? Beschreibe es genau auf Deutsch."
     photo_file = await update.message.photo[-1].get_file()
     photo_bytes = await photo_file.download_as_bytearray()
@@ -296,6 +282,66 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await msg.edit_text(f"Bildanalyse-Fehler: {last_error}")
 
 
+# --- VIDEO-SCHNITT MIT MINUTEN-ERKENNUNG ---
+async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    caption = update.message.caption or ""
+    msg = await update.message.reply_text(
+        "Lade Video herunter und schneide es..."
+    )
+
+    input_path = "input_video.mp4"
+    output_path = "output_video.mp4"
+
+    try:
+        video_file = await update.message.video.get_file()
+        await video_file.download_to_drive(input_path)
+
+        clip = mp.VideoFileClip(input_path)
+
+        # Standardwerte (falls keine Minuten angegeben sind: erste 10 Sekunden)
+        start_sec = 0
+        end_sec = min(clip.duration, 10)
+
+        # Suche nach Mustern wie "von Minute X bis Y" im Text
+        numbers = [int(num) for num in re.findall(r"\d+", caption)]
+        if len(numbers) >= 2:
+            # Annahme: Nutzer meint Minuten -> in Sekunden umrechnen (* 60)
+            start_sec = numbers[0] * 60
+            end_sec = numbers[1] * 60
+        elif len(numbers) == 1:
+            # Falls nur eine Zahl genannt wird (z.B. "schneide die ersten X Minuten")
+            end_sec = numbers[0] * 60
+
+        # Begrenzen, damit es nicht über die echte Videolänge hinausgeht
+        start_sec = max(0, min(start_sec, clip.duration))
+        end_sec = max(start_sec + 1, min(end_sec, clip.duration))
+
+        # Schnitt ausführen
+        edited_clip = clip.subclipped(start_sec, end_sec)
+        edited_clip.write_videofile(
+            output_path, codec="libx264", audio_codec="aac"
+        )
+
+        with open(output_path, "rb") as video_to_send:
+            await update.message.reply_video(
+                video=video_to_send,
+                caption=f"Erfolgreich geschnitten (von {start_sec // 60} bis {end_sec // 60} Min.)!",
+            )
+
+        clip.close()
+        edited_clip.close()
+        await msg.delete()
+
+    except Exception as e:
+        await msg.edit_text(f"Fehler beim Videoschnitt: {e}")
+
+    finally:
+        if os.path.exists(input_path):
+            os.remove(input_path)
+        if os.path.exists(output_path):
+            os.remove(output_path)
+
+
 # --- 3. BOT STARTEN ---
 if __name__ == "__main__":
     keep_alive()
@@ -310,6 +356,7 @@ if __name__ == "__main__":
         MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message)
     )
     bot_app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    bot_app.add_handler(MessageHandler(filters.VIDEO, handle_video))
 
     print("Kai Bot gestartet...")
     bot_app.run_polling()
