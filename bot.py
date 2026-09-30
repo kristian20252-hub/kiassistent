@@ -1,13 +1,13 @@
+from collections import defaultdict
 import io
 import os
-import requests
-from collections import defaultdict
 from threading import Thread
+import urllib.parse
 from flask import Flask
 from google import genai
 from google.genai import types
 from groq import Groq
-import replicate
+import requests
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
@@ -41,7 +41,6 @@ def keep_alive():
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-REPLICATE_API_TOKEN = os.environ.get("REPLICATE_API_TOKEN")
 
 groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 gemini_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
@@ -92,19 +91,18 @@ def get_gemini_models():
             return available
     except Exception as e:
         print(f"Fehler beim Laden der Gemini-Modelle: {e}")
-    return ["gemini-3.8-flash", "gemini-3.5-flash", "gemini-1.5-flash"]
+    return ["gemini-2.5-flash", "gemini-1.5-flash"]
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     user_chat_history[chat_id].clear()
     await update.message.reply_text(
-        "Hallo! Ich bin Kai Bot.\n\n"
+        "Hallo! Ich bin Kai Bot (100% Kostenlos!).\n\n"
         "Was ich kann:\n"
         "• Chatten: Schreib mir einfach eine Nachricht!\n"
         "• Bilder analysieren: Sende mir ein Bild ohne Text.\n"
-        "• Bilder bearbeiten: Sende mir ein Bild MIT Bildunterschrift.\n"
-        "• Bilder neu erstellen: Nutze den Befehl `/bild <Beschreibung>`."
+        "• Bilder neu / angepasst erstellen: Sende ein Bild mit Text ODER nutze `/bild <Beschreibung>`."
     )
 
 
@@ -114,7 +112,7 @@ async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Chat-Verlauf zurückgesetzt!")
 
 
-# --- BEFEHL: /bild (BILD NEU ERSTELLEN VIA REPLICATE / FLUX) ---
+# --- BEFEHL: /bild (BILD KOSTENLOS NEU ERSTELLEN) ---
 async def generate_image_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ):
@@ -125,36 +123,26 @@ async def generate_image_command(
         )
         return
 
-    if not REPLICATE_API_TOKEN:
-        await update.message.reply_text(
-            "Fehler: REPLICATE_API_TOKEN ist in Render nicht konfiguriert."
-        )
-        return
-
-    msg = await update.message.reply_text("Erstelle dein Bild mit FLUX...")
+    msg = await update.message.reply_text("Erstelle dein Bild kostenlos...")
 
     try:
-        output = replicate.run(
-            "black-forest-labs/flux-schnell", input={"prompt": prompt}
+        encoded_prompt = urllib.parse.quote(prompt)
+        # Pollinations.ai ist 100% kostenfrei
+        image_url = (
+            f"https://pollinations.ai/p/{encoded_prompt}?width=1024&height=1024"
         )
 
-        if output:
-            image_url = (
-                output[0]
-                if isinstance(output, list)
-                else getattr(output, "url", str(output))
-            )
-            img_data = requests.get(str(image_url)).content
+        response = requests.get(image_url, timeout=30)
+        if response.status_code == 200:
             await update.message.reply_photo(
-                photo=io.BytesIO(img_data),
+                photo=io.BytesIO(response.content),
                 caption=f"Erstellt für: {prompt}",
             )
             await msg.delete()
         else:
-            await msg.edit_text("Bild konnte nicht geladen werden.")
-
+            await msg.edit_text("Bild konnte nicht generiert werden.")
     except Exception as e:
-        await msg.edit_text(f"Bildgenerierungs-Fehler: {e}")
+        await msg.edit_text(f"Fehler bei der Bilderstellung: {e}")
 
 
 # --- TEXT-CHAT VIA GROQ ---
@@ -195,61 +183,39 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"Fehler: {last_error}")
 
 
-# --- BILDANALYSE (GEMINI) ODER BILDBEARBEITUNG (REPLICATE) ---
+# --- BILDANALYSE (GEMINI KOSTENLOS) ODER BILD-NEUERSTELLUNG ---
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     caption = update.message.caption
 
-    # FALL A: Bild MIT Bildunterschrift -> BILD BEARBEITEN
-    if caption and REPLICATE_API_TOKEN:
-        msg = await update.message.reply_text("Bearbeite dein Bild...")
+    # FALL A: Bild MIT Text -> Generiere ein neues Bild basierend auf dem Wunsch
+    if caption:
+        msg = await update.message.reply_text(
+            "Generiere neues Bild basierend auf deinem Text..."
+        )
         try:
-            photo_file = await update.message.photo[-1].get_file()
-            photo_bytes = await photo_file.download_as_bytearray()
+            encoded_prompt = urllib.parse.quote(caption)
+            image_url = f"https://pollinations.ai/p/{encoded_prompt}?width=1024&height=1024"
+            response = requests.get(image_url, timeout=30)
 
-            image_stream = io.BytesIO(photo_bytes)
-            image_stream.name = "input_image.jpg"
-
-            # Stabiles Image-to-Image Modell auf Replicate verwenden (SDXL Image-to-Image)
-            output = replicate.run(
-                "stability-ai/sdxl:39ed52f2a78e932281e6e8159478a161e2e214d2320b5220c5b07223edcb247e",
-                input={
-                    "image": image_stream,
-                    "prompt": caption,
-                    "prompt_strength": 0.6,
-                },
-            )
-
-            if output:
-                img_url = (
-                    output[0]
-                    if isinstance(output, list)
-                    else getattr(output, "url", str(output))
-                )
-                img_data = requests.get(str(img_url)).content
+            if response.status_code == 200:
                 await update.message.reply_photo(
-                    photo=io.BytesIO(img_data),
-                    caption=f"Bearbeitet: '{caption}'",
+                    photo=io.BytesIO(response.content),
+                    caption=f"Neu erstellt für: '{caption}'",
                 )
                 await msg.delete()
                 return
         except Exception as e:
-            print(f"Bildbearbeitung fehlgeschlagen: {e}")
-            await msg.edit_text(f"Fehler bei der Bildbearbeitung: {e}")
+            await msg.edit_text(f"Fehler bei der Generierung: {e}")
             return
 
-    # FALL B: Bild OHNE Bildunterschrift -> BILD ANALYSIEREN
+    # FALL B: Bild OHNE Text -> Bildanalyse mit Gemini (Free Tier)
     if not gemini_client:
-        await update.message.reply_text(
-            "Fehler: GEMINI_API_KEY fehlt in Render."
-        )
+        await update.message.reply_text("Fehler: GEMINI_API_KEY fehlt.")
         return
 
     msg = await update.message.reply_text("Ich schaue mir das Bild an...")
 
-    prompt = (
-        caption
-        or "Was ist auf diesem Bild zu sehen? Beschreibe es genau auf Deutsch."
-    )
+    prompt = "Was ist auf diesem Bild zu sehen? Beschreibe es genau auf Deutsch."
     photo_file = await update.message.photo[-1].get_file()
     photo_bytes = await photo_file.download_as_bytearray()
 
