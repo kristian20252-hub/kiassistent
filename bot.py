@@ -77,27 +77,6 @@ def get_chat_models():
         return ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
 
 
-def get_vision_models():
-    """Holt alle nutzbaren Vision-Modelle von Groq."""
-    try:
-        models_page = groq_client.models.list()
-        vision_models = [
-            m.id
-            for m in models_page.data
-            if hasattr(m, "id") and "vision" in m.id.lower()
-        ]
-        if vision_models:
-            return vision_models
-    except Exception as e:
-        print(f"Fehler beim Laden der Vision-Modelle: {e}")
-
-    # Fallback-Vision-Modelle
-    return [
-        "llama-3.2-11b-vision-instruct",
-        "llama-3.2-90b-vision-instruct",
-    ]
-
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     user_chat_history[chat_id].clear()
@@ -163,12 +142,18 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         or "Was ist auf diesem Bild zu sehen? Beschreibe es genau auf Deutsch."
     )
 
-    vision_models = get_vision_models()
+    # Funktionierende Vision-Modelle bei Groq
+    vision_candidates = [
+        "llama-3.2-11b-vision-preview",
+        "llama-3.2-11b-instant",
+        "meta-llama/llama-3.2-11b-vision-instruct",
+        "llama-3.2-90b-vision-preview",
+    ]
 
     reply = None
     last_error = None
 
-    for model in vision_models:
+    for model in vision_candidates:
         try:
             response = groq_client.chat.completions.create(
                 model=model,
