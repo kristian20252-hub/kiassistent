@@ -52,18 +52,15 @@ user_chat_history = defaultdict(list)
 MAX_HISTORY = 10
 
 
-def get_active_model():
-    """Fragt bei Groq live ab, welche Modelle aktuell verfügbar sind."""
+def get_available_models():
+    """Liest alle Modell-IDs aus, die deinem API-Key bei Groq zur Verfügung stehen."""
     try:
         models_page = groq_client.models.list()
-        available = [m.id for m in models_page.data]
-        if available:
-            print(f"Verfügbare Groq-Modelle: {available}")
-            return available[0]  # Nimmt automatisch das erste verfügbare Modell
+        # Filtert nur aktionsfähige Modell-IDs heraus
+        return [m.id for m in models_page.data if hasattr(m, "id")]
     except Exception as e:
-        print(f"Fehler beim Abrufen der Modelle: {e}")
-    # Fallback-Modell
-    return "llama-3.3-70b-versatile"
+        print(f"Fehler beim Abrufen der Modellliste: {e}")
+        return []
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -95,22 +92,32 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_chat_history[chat_id]
     )
 
-    # Dynamisch das aktuell aktive Modell ermitteln
-    active_model = get_active_model()
+    available_models = get_available_models()
 
-    try:
-        response = groq_client.chat.completions.create(
-            model=active_model, messages=messages_payload, temperature=0.7
-        )
-        reply = response.choices[0].message.content
-        if reply:
-            user_chat_history[chat_id].append(
-                {"role": "assistant", "content": reply}
+    reply = None
+    last_error = None
+
+    # Iteriert durch alle für deinen Account freigeschalteten Modelle
+    for model in available_models:
+        try:
+            response = groq_client.chat.completions.create(
+                model=model, messages=messages_payload, temperature=0.7
             )
-            await update.message.reply_text(reply)
-    except Exception as e:
+            reply = response.choices[0].message.content
+            if reply:
+                break
+        except Exception as e:
+            last_error = e
+            continue
+
+    if reply:
+        user_chat_history[chat_id].append(
+            {"role": "assistant", "content": reply}
+        )
+        await update.message.reply_text(reply)
+    else:
         await update.message.reply_text(
-            f"Groq API Fehler (Modell {active_model}): {e}"
+            f"Groq API Fehler: Keine funktionierenden Modelle gefunden. Letzter Fehler: {last_error}"
         )
 
 
