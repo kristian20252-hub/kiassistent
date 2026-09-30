@@ -6,3 +6,4 @@ requests
 pillow
 moviepy
 edge-tts
+yt-dlp
