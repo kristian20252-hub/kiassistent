@@ -166,7 +166,6 @@ async def download_youtube(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "nocheckcertificate": True,
     }
 
-    # Falls du eine cookies.txt auf dem Server hinterlegst, hier aktivieren:
     if os.path.exists("cookies.txt"):
         ydl_opts["cookies"] = "cookies.txt"
 
@@ -196,20 +195,25 @@ async def download_youtube(update: Update, context: ContextTypes.DEFAULT_TYPE):
             os.remove(output_filename)
 
 
-# --- BILDGENERIERUNG MIT ZUFALLS-SEED ---
+# --- BILDGENERIERUNG MIT FALLBACK-ENDPUNKT & SEED ---
 def fetch_image_from_pollinations(prompt: str):
     encoded_prompt = urllib.parse.quote(prompt)
     seed = random.randint(1, 1000000)
-    url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=1024&seed={seed}&nologo=true"
+    # Haupt-URL und Fallback-URL für den kostenlosen Pollinations-Server
+    urls = [
+        f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=1024&seed={seed}&nologo=true",
+        f"https://pollinations.ai/p/{encoded_prompt}?width=1024&height=1024&seed={seed}&nologo=true",
+    ]
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
     }
-    try:
-        response = requests.get(url, headers=headers, timeout=90)
-        if response.status_code == 200:
-            return response.content
-    except Exception as e:
-        print(f"Pollinations Timeout/Fehler: {e}")
+    for url in urls:
+        try:
+            response = requests.get(url, headers=headers, timeout=90)
+            if response.status_code == 200 and len(response.content) > 100:
+                return response.content
+        except Exception as e:
+            print(f"Pollinations Timeout/Fehler bei {url}: {e}")
     return None
 
 
@@ -242,7 +246,7 @@ async def generate_image_command(
         await msg.edit_text("Zeitüberschreitung beim Bild-Server.")
 
 
-# --- SPRACHNACHRICHTEN VERARBEITEN ---
+# --- SPRACHNACHRICHTEN VERARBEITEN (MIT BILD-ÜBERPRÜFUNG) ---
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     msg = await update.message.reply_text(
@@ -269,19 +273,26 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
-        # Prüfen ob in der Sprachnachricht ein Bild gewünscht wurde
+        # --- WICHTIGE ERWEITERUNG: BILDERKENNUNG DIREKT VOM SPRACH-TRANSKRIPT ---
         lower_user_text = user_text.lower()
-        if (
+        # Prüfen, ob ein Bildwunsch explizit geäußert wird
+        is_image_voice_request = (
             "bild" in lower_user_text
             or "zeige" in lower_user_text
             or "zeichne" in lower_user_text
-        ):
+        ) or (
+            lower_user_text.startswith("erstelle")
+            and ("bild" in lower_user_text or "katze" in lower_user_text)
+        )
+
+        if is_image_voice_request:
             clean_prompt = re.sub(
-                r"(erstelle|zeige|mache|mal|zeichne|\bbitte\b|\bein\b|\bgesucht\b|\bbild\b|\bvon\b)",
+                r"(erstelle|zeige|mache|mal|zeichne|\bbitte\b|\bein\b|\bgesucht\b|\bbild\b|\bvon\b|\bdas\b|\bder\b|\bden\b)",
                 "",
                 user_text,
                 flags=re.IGNORECASE,
             ).strip()
+
             if not clean_prompt:
                 clean_prompt = user_text
 
@@ -290,11 +301,18 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if img_bytes:
                 await update.message.reply_photo(
                     photo=io.BytesIO(img_bytes),
-                    caption=f"Erstellt für: {user_text}",
+                    caption=f"Erstellt nach Sprache: \"{user_text}\"",
                 )
                 await msg.delete()
                 return
+            else:
+                await msg.edit_text(
+                    "Der Bild-Server ist derzeit überlastet. Bitte versuche es später erneut."
+                )
+                return
+        # --- ENDE DER ERWEITERUNG ---
 
+        # Falls es KEINE Bildanfrage ist, normale Sprachantwort generieren
         await msg.edit_text(
             f"🎤 *Verstanden:* \"{user_text}\"\nGeneriere Sprachantwort..."
         )
@@ -607,5 +625,6 @@ if __name__ == "__main__":
     bot_app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     bot_app.add_handler(MessageHandler(filters.VIDEO, handle_video))
 
-    print("Kai Bot gestartet...")
+    print("Kai Bot mit optimierter Spracherkennung und Fallback gestartet...")
     bot_app.run_polling()
+
