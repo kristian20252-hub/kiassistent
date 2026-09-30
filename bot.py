@@ -103,7 +103,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "Hallo! Ich bin Kai Bot (100% Kostenlos!).\n\n"
         "Was ich kann:\n"
-        "• Chatten: Schreib mir einfach!\n"
+        "• Chatten & Sprachnachrichten verstehen: Schreib oder sprich mit mir!\n"
         "• Bilder generieren: Schreib 'Erstelle ein Bild von...'\n"
         "• Bilder mit Text versehen: Sende ein Bild mit Textunterschrift.\n"
         "• Videos schneiden: Sende ein Video mit Text (z.B. 'schneide von Minute 2 bis 8')."
@@ -152,6 +152,78 @@ async def generate_image_command(
             await msg.edit_text("Der Bild-Server ist derzeit ausgelastet.")
     except Exception:
         await msg.edit_text("Zeitüberschreitung beim Bild-Server.")
+
+
+# --- SPRACHNACHRICHTEN VERARBEITEN (WHISPER) ---
+async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    msg = await update.message.reply_text(
+        "Höre mir die Sprachnachricht an..."
+    )
+
+    voice_file_path = "voice_input.ogg"
+    try:
+        voice = await update.message.voice.get_file()
+        await voice.download_to_drive(voice_file_path)
+
+        with open(voice_file_path, "rb") as audio_file:
+            transcript = groq_client.audio.transcriptions.create(
+                file=(voice_file_path, audio_file.read()),
+                model="whisper-large-v3",
+                response_format="text",
+                language="de",
+            )
+
+        user_text = transcript
+        if not user_text.strip():
+            await msg.edit_text(
+                "Ich konnte in der Sprachnachricht nichts verstehen."
+            )
+            return
+
+        await msg.edit_text(
+            f"🎤 *Verstanden:* \"{user_text}\"\nAntworte darauf..."
+        )
+
+        user_chat_history[chat_id].append({"role": "user", "content": user_text})
+        if len(user_chat_history[chat_id]) > MAX_HISTORY:
+            user_chat_history[chat_id] = user_chat_history[chat_id][
+                -MAX_HISTORY:
+            ]
+
+        messages_payload = [{"role": "system", "content": SYSTEM_PROMPT}] + list(
+            user_chat_history[chat_id]
+        )
+        available_models = get_chat_models()
+
+        reply = None
+        for model in available_models:
+            try:
+                response = groq_client.chat.completions.create(
+                    model=model, messages=messages_payload, temperature=0.7
+                )
+                reply = response.choices[0].message.content
+                if reply:
+                    break
+            except Exception:
+                continue
+
+        if reply:
+            user_chat_history[chat_id].append(
+                {"role": "assistant", "content": reply}
+            )
+            await update.message.reply_text(reply)
+        else:
+            await update.message.reply_text(
+                "Entschuldigung, ich konnte keine Antwort generieren."
+            )
+
+    except Exception as e:
+        await msg.edit_text(f"Fehler bei der Sprachverarbeitung: {e}")
+
+    finally:
+        if os.path.exists(voice_file_path):
+            os.remove(voice_file_path)
 
 
 # --- TEXT-CHAT UND AUTOMATISCHE BILDERKENNUNG ---
@@ -339,7 +411,6 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
         start_sec = max(0, min(start_sec, clip.duration))
         end_sec = max(start_sec + 1, min(end_sec, clip.duration))
 
-        # Korrigierte Methode für neuere MoviePy-Versionen
         edited_clip = clip.subclipped(start_sec, end_sec)
         edited_clip.write_videofile(
             output_path, codec="libx264", audio_codec="aac"
@@ -378,8 +449,10 @@ if __name__ == "__main__":
     bot_app.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message)
     )
+    bot_app.add_handler(MessageHandler(filters.VOICE, handle_voice))
     bot_app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     bot_app.add_handler(MessageHandler(filters.VIDEO, handle_video))
 
     print("Kai Bot gestartet...")
     bot_app.run_polling()
+
