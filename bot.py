@@ -101,7 +101,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Hallo! Ich bin Kai Bot (100% Kostenlos!).\n\n"
         "Was ich kann:\n"
         "• Chatten: Schreib mir einfach eine Nachricht!\n"
-        "• Bilder generieren: Schreib 'Erstelle ein Bild von...' ODER nutze `/bild <Beschreibung>`.\n"
+        "• Bilder generieren: Schreib z.B. 'Erstelle ein Bild von...' ODER Nutze `/bild <Beschreibung>`.\n"
         "• Bilder analysieren: Sende mir ein Bild ohne Text."
     )
 
@@ -112,7 +112,7 @@ async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Chat-Verlauf zurückgesetzt!")
 
 
-# --- HILFSFUNKTION FÜR BILDGENERIERUNG VIA POLLINATIONS ---
+# --- BILDGENERIERUNG VIA POLLINATIONS ---
 def fetch_image_from_pollinations(prompt: str):
     encoded_prompt = urllib.parse.quote(prompt)
     url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=1024&nologo=true"
@@ -155,22 +155,25 @@ async def generate_image_command(
         )
 
 
-# --- TEXT-CHAT ODER AUTOMATISCHE BILDFERKENNUNG ---
+# --- TEXT-CHAT UND AUTOMATISCHE ERKENNUNG VON BILD-WÜNSCHEN ---
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     user_text = update.message.text
     lower_text = user_text.lower()
 
-    # Prüfung, ob der Nutzer im normalen Chat ein Bild anfordert
-    image_trigger_words = [
+    # Auslöser-Begriffe für Bildgenerierung abfangen
+    image_triggers = [
         "erstelle ein bild",
         "generiere ein bild",
         "zeichne",
         "mal ein bild",
         "erstelle bild",
         "bild von",
+        "mach ein bild",
     ]
-    if any(trigger in lower_text for trigger in image_trigger_words):
+
+    # Wenn der Text nach einem Bild fragt, generiere es direkt:
+    if any(trigger in lower_text for trigger in image_triggers):
         msg = await update.message.reply_text(
             "Erstelle dein Bild kostenlos..."
         )
@@ -185,12 +188,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
             else:
                 await msg.edit_text(
-                    "Bild-Server ausgelastet. Versuche es bitte nochmal."
+                    "Bild-Server ist ausgelastet. Bitte gleich nochmal versuchen."
                 )
                 return
         except Exception:
             await msg.edit_text(
-                "Zeitüberschreitung. Bitte versuche es gleich nochmal."
+                "Zeitüberschreitung. Der Bild-Server braucht gerade länger, bitte erneut versuchen."
             )
             return
 
@@ -228,11 +231,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"Fehler: {last_error}")
 
 
-# --- BILDANALYSE ODER NEU-GENERIERUNG MIT BILDUNTERSCHRIFT ---
+# --- BILDANALYSE / BEARBEITUNG MIT BILDUNTERSCHRIFT ---
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     caption = update.message.caption
 
-    # FALL A: Bild MIT Text -> Generiere ein neues Bild
+    # Bild MIT Text -> Erstelle neues Bild
     if caption:
         msg = await update.message.reply_text("Generiere neues Bild...")
         try:
@@ -245,13 +248,15 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await msg.delete()
                 return
             else:
-                await msg.edit_text("Server ausgelastet. Versuche es nochmal.")
+                await msg.edit_text(
+                    "Server ausgelastet. Versuche es nochmal."
+                )
                 return
         except Exception:
             await msg.edit_text("Zeitüberschreitung beim Generieren.")
             return
 
-    # FALL B: Bild OHNE Text -> Bildanalyse mit Gemini
+    # Bild OHNE Text -> Analyse durch Gemini
     if not gemini_client:
         await update.message.reply_text("Fehler: GEMINI_API_KEY fehlt.")
         return
