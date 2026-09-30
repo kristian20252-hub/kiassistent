@@ -83,6 +83,25 @@ def get_chat_models():
         return ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
 
 
+def get_gemini_vision_models():
+    """Dynamische Ermittlung verfügbarer Gemini-Modelle."""
+    fallback_models = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
+    try:
+        models_list = gemini_client.models.list()
+        available = []
+        for m in models_list:
+            name = getattr(m, "name", "")
+            if name.startswith("models/"):
+                name = name.replace("models/", "")
+            if "flash" in name or "pro" in name:
+                available.append(name)
+        if available:
+            return available
+    except Exception as e:
+        print(f"Fehler beim Abrufen der Gemini-Modelle: {e}")
+    return fallback_models
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     user_chat_history[chat_id].clear()
@@ -152,17 +171,11 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         or "Was ist auf diesem Bild zu sehen? Beschreibe es genau auf Deutsch."
     )
 
-    # Liste von Gemini-Modellen, die nacheinander probiert werden
-    gemini_models = [
-        "gemini-2.5-flash",
-        "gemini-2.0-flash",
-        "gemini-1.5-flash",
-    ]
-
+    candidate_models = get_gemini_vision_models()
     response_text = None
     last_error = None
 
-    for model_name in gemini_models:
+    for model_name in candidate_models:
         try:
             response = gemini_client.models.generate_content(
                 model=model_name,
