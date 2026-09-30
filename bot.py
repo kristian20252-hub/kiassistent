@@ -148,25 +148,11 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         or "Was ist auf diesem Bild zu sehen? Beschreibe es genau auf Deutsch."
     )
 
+    # Nur verifizierte, in Groq frei verfügbare Vision-Modell-IDs
     vision_candidates = [
         "llama-3.2-11b-vision-instruct",
-        "llama-3.2-90b-vision-instruct",
-        "meta-llama/llama-3.2-11b-vision-instruct",
-        "meta-llama/llama-3.2-90b-vision-instruct",
+        "llama-3.2-11b-instant",
     ]
-
-    try:
-        models_page = groq_client.models.list()
-        for m in models_page.data:
-            model_id = getattr(m, "id", "")
-            if (
-                "vision" in model_id.lower()
-                and "preview" not in model_id.lower()
-                and model_id not in vision_candidates
-            ):
-                vision_candidates.append(model_id)
-    except Exception as e:
-        print(f"Fehler beim dynamischen Laden der Vision-Modelle: {e}")
 
     reply = None
     last_error = None
