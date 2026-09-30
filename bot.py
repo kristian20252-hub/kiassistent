@@ -10,7 +10,6 @@ from google.genai import types
 from groq import Groq
 import moviepy.editor as mp
 from PIL import Image, ImageDraw, ImageFont
-from rembg import remove
 import requests
 from telegram import Update
 from telegram.ext import (
@@ -104,9 +103,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "Hallo! Ich bin Kai Bot (100% Kostenlos!).\n\n"
         "Was ich kann:\n"
-        "• Chatten: Schreib mir einfach eine Nachricht!\n"
-        "• Bilder generieren: Schreib 'Erstelle ein Bild von...' oder `/bild`.\n"
-        "• Bilder bearbeiten: Sende ein Bild mit Text (z.B. 'Schreibe [Text] auf das Bild' oder 'Ändere den Hintergrund').\n"
+        "• Chatten: Schreib mir einfach!\n"
+        "• Bilder generieren: Schreib 'Erstelle ein Bild von...'\n"
+        "• Bilder mit Text versehen: Sende ein Bild mit Textunterschrift.\n"
         "• Videos schneiden: Sende ein Video mit Text (z.B. 'schneide von Minute 2 bis 8')."
     )
 
@@ -159,6 +158,8 @@ async def generate_image_command(
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     user_text = update.message.text
+    if not user_text:
+        return
     lower_text = user_text.lower()
 
     image_triggers = [
@@ -223,11 +224,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"Fehler: {last_error}")
 
 
-# --- BILD-BEARBEITUNG: TEXT EINFÜGEN ODER HINTERGRUND WECHSELN ---
+# --- BILD-BEARBEITUNG: TEXT AUF BILD SCHREIBEN ---
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     caption = update.message.caption or ""
-    lower_caption = caption.lower()
-
     if not caption:
         if not gemini_client:
             await update.message.reply_text("Fehler: GEMINI_API_KEY fehlt.")
@@ -263,90 +262,56 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    msg = await update.message.reply_text(
-        "Bearbeite dein Bild (Text einfügen / Hintergrund ändern)..."
-    )
+    msg = await update.message.reply_text("Füge Text auf das Bild ein...")
     photo_file = await update.message.photo[-1].get_file()
     photo_bytes = await photo_file.download_as_bytearray()
 
     try:
-        if "hintergrund" in lower_caption or "freistellen" in lower_caption:
-            output_image_bytes = remove(photo_bytes)
-            foreground_img = Image.open(
-                io.BytesIO(output_image_bytes)
-            ).convert("RGBA")
+        img = Image.open(io.BytesIO(photo_bytes)).convert("RGB")
+        draw = ImageDraw.Draw(img)
 
-            bg_prompt = (
-                caption.replace("hintergrund", "")
-                .replace("ändern", "")
-                .strip()
+        text_to_write = caption
+        lower_caption = caption.lower()
+        if "schreibe" in lower_caption:
+            parts = re.split(r"schreibe", caption, flags=re.IGNORECASE)
+            if len(parts) > 1:
+                text_to_write = parts[1].strip()
+
+        try:
+            font = ImageFont.truetype(
+                "DejaVuSans-Bold.ttf", int(img.height / 20)
             )
-            if not bg_prompt:
-                bg_prompt = "Ein schöner Strand im Sonnenuntergang"
+        except Exception:
+            font = ImageFont.load_default()
 
-            bg_bytes = fetch_image_from_pollinations(bg_prompt)
-            if bg_bytes:
-                bg_img = (
-                    Image.open(io.BytesIO(bg_bytes))
-                    .convert("RGBA")
-                    .resize(foreground_img.size)
-                )
-                bg_img.paste(foreground_img, (0, 0), foreground_img)
+        bbox = draw.textbbox((0, 0), text_to_write, font=font)
+        text_width = bbox[2] - bbox[0]
+        text_height = bbox[3] - bbox[1]
 
-                output_io = io.BytesIO()
-                bg_img.convert("RGB").save(output_io, format="JPEG")
-                output_io.seek(0)
+        x = (img.width - text_width) / 2
+        y = img.height - text_height - 40
 
-                await update.message.reply_photo(
-                    photo=output_io, caption="Hintergrund erfolgreich geändert!"
-                )
-                await msg.delete()
-                return
-        else:
-            img = Image.open(io.BytesIO(photo_bytes)).convert("RGB")
-            draw = ImageDraw.Draw(img)
+        # Umrandung für bessere Lesbarkeit
+        draw.text((x - 2, y), text_to_write, font=font, fill=(0, 0, 0))
+        draw.text((x + 2, y), text_to_write, font=font, fill=(0, 0, 0))
+        draw.text((x, y - 2), text_to_write, font=font, fill=(0, 0, 0))
+        draw.text((x, y + 2), text_to_write, font=font, fill=(0, 0, 0))
+        draw.text((x, y), text_to_write, font=font, fill=(255, 255, 255))
 
-            text_to_write = caption
-            if "schreibe" in lower_caption:
-                parts = re.split(r"schreibe", caption, flags=re.IGNORECASE)
-                if len(parts) > 1:
-                    text_to_write = parts[1].strip()
+        output_io = io.BytesIO()
+        img.save(output_io, format="JPEG")
+        output_io.seek(0)
 
-            try:
-                font = ImageFont.truetype(
-                    "DejaVuSans-Bold.ttf", int(img.height / 20)
-                )
-            except Exception:
-                font = ImageFont.load_default()
-
-            bbox = draw.textbbox((0, 0), text_to_write, font=font)
-            text_width = bbox[2] - bbox[0]
-            text_height = bbox[3] - bbox[1]
-
-            x = (img.width - text_width) / 2
-            y = img.height - text_height - 40
-
-            draw.text((x - 2, y), text_to_write, font=font, fill=(0, 0, 0))
-            draw.text((x + 2, y), text_to_write, font=font, fill=(0, 0, 0))
-            draw.text((x, y - 2), text_to_write, font=font, fill=(0, 0, 0))
-            draw.text((x, y + 2), text_to_write, font=font, fill=(0, 0, 0))
-            draw.text((x, y), text_to_write, font=font, fill=(255, 255, 255))
-
-            output_io = io.BytesIO()
-            img.save(output_io, format="JPEG")
-            output_io.seek(0)
-
-            await update.message.reply_photo(
-                photo=output_io, caption="Text erfolgreich hinzugefügt!"
-            )
-            await msg.delete()
-            return
+        await update.message.reply_photo(
+            photo=output_io, caption="Text erfolgreich hinzugefügt!"
+        )
+        await msg.delete()
 
     except Exception as e:
         await msg.edit_text(f"Fehler bei der Bildbearbeitung: {e}")
 
 
-# --- VIDEO-SCHNITT MIT MINUTEN-ERKENNUNG ---
+# --- VIDEO-SCHNITT ---
 async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     caption = update.message.caption or ""
     msg = await update.message.reply_text(
