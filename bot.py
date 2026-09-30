@@ -154,7 +154,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         response = gemini_client.models.generate_content(
-            model="gemini-3.8-flash",
+            model="gemini-1.5-flash",
             contents=[
                 SYSTEM_PROMPT,
                 genai.types.Part.from_bytes(
