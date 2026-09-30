@@ -141,9 +141,8 @@ async def send_voice_reply(update: Update, text: str):
         await update.message.reply_text(text)
 
 
-# --- YOUTUBE DOWNLOAD FUNKTION ---
+# --- YOUTUBE DOWNLOAD FUNKTION (MIT BOT-SCHUTZ-UMGEHUNG) ---
 async def download_youtube(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Unterstützt sowohl den /youtube Befehl als auch direkte Links im Text
     args = context.args
     url = args[0] if args else update.message.text
 
@@ -161,7 +160,8 @@ async def download_youtube(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ydl_opts = {
         "format": "best[ext=mp4]/best",
         "outtmpl": output_filename,
-        "max_filesize": 50 * 1024 * 1024,  # Telegram Bot Limit beachten (max ~50MB)
+        "max_filesize": 50 * 1024 * 1024,
+        "extractor_args": {"youtube": {"player_client": ["android", "web"]}},
     }
 
     try:
@@ -317,7 +317,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     lower_text = user_text.lower()
 
-    # Prüfen, ob ein YouTube-Link im Text geschickt wurde
     if "youtube.com" in user_text or "youtu.be" in user_text:
         context.args = [user_text]
         await download_youtube(update, context)
@@ -574,6 +573,6 @@ if __name__ == "__main__":
     bot_app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     bot_app.add_handler(MessageHandler(filters.VIDEO, handle_video))
 
-    print("Kai Bot mit YouTube-Download gestartet...")
+    print("Kai Bot mit optimiertem YouTube-Download gestartet...")
     bot_app.run_polling()
 
