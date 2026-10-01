@@ -2,14 +2,13 @@ import asyncio
 from collections import defaultdict
 import io
 import os
+import time
 from threading import Thread
 
-import edge_tts
 from flask import Flask
 from google import genai
 from google.genai import types
 from groq import Groq
-import pyttsx3
 import requests
 from telegram import Update
 from telegram.ext import (
@@ -19,6 +18,17 @@ from telegram.ext import (
     MessageHandler,
     filters,
 )
+
+# Versuche Coqui TTS zu laden, falls die Ressourcen auf Render ausreichen
+try:
+  from TTS.api import TTS
+
+  TTS_AVAILABLE = True
+except Exception as e:
+  print(
+      f"Hinweis: Lokales Coqui TTS konnte nicht direkt geladen werden ({e})."
+  )
+  TTS_AVAILABLE = False
 
 # --- 1. UMWELTVARIABLEN & KONFIGURATION ---
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
@@ -33,13 +43,32 @@ genai_client = (
 
 chat_histories = defaultdict(list)
 
+# Globale Variable für das Modell
+tts_model = None
+
+if TTS_AVAILABLE:
+  try:
+    print(
+        "Lade XTTS-Modell für echtes Voice Cloning (dies kann beim Start kurz"
+        " dauern)..."
+    )
+    tts_model = TTS(
+        model_name="tts_models/multilingual/multi-dataset/xtts_v2", progress_bar=False
+    )
+    print("XTTS-Modell erfolgreich geladen!")
+  except Exception as e:
+    print(
+        f"Konnte XTTS-Modell nicht initialisieren (möglicherweise zu wenig RAM"
+        f" auf Render): {e}"
+    )
+
 # --- 2. FLASK WEB SERVER (HÄLT DEN BOT AUF RENDER WACH) ---
 app = Flask(__name__)
 
 
 @app.route("/")
 def home():
-  return "Kai Bot ist online und läuft!"
+  return "Kai Bot (Voice Clone) ist online und läuft!"
 
 
 def run_flask():
@@ -94,26 +123,57 @@ async def generate_ai_response(chat_id: int, user_message: str) -> str:
   return response_text
 
 
-# --- 5. SPRACHNACHRICHT MIT OPTIMIERTER TIEFER STIMME ---
+# --- 5. SPRACHNACHRICHT MIT ECHTER STIMME ---
 async def send_voice_reply(update: Update, text: str):
   mp3_path = f"kai_voice_{update.effective_chat.id}.mp3"
+  voice_generated = False
 
-  try:
-    # Wir nutzen hier eine speziell abgesenkte, kräftige deutsche Neural-Stimme mit angepasster Geschwindigkeit,
-    # die perfekt zu einer männlichen Stimmage passt und stabil auf Render läuft.
-    communicate = edge_tts.Communicate(
-        text, "de-DE-KillianNeural", pitch="-20Hz", rate="-8%"
-    )
-    await communicate.save(mp3_path)
-
-    with open(mp3_path, "rb") as audio_file:
-      await update.message.reply_audio(
-          audio=audio_file, caption="🎙 Kais Stimme (Tief & Angepasst)"
+  # Versuche das lokale Klonen mit deiner echte Stimmdatei
+  if tts_model and os.path.exists("meine_stimme.mp3"):
+    try:
+      print("Klone Stimme lokal mit 'meine_stimme.mp3'...")
+      # Führe das Klonen in einem separaten Thread aus, damit der Bot nicht einfriert
+      await asyncio.to_thread(
+          tts_model.tts_to_file,
+          text=text,
+          speaker_wav="meine_stimme.mp3",
+          language="de",
+          file_path=mp3_path,
       )
-    print("Sprachnachricht erfolgreich gesendet!")
-  except Exception as e:
-    print(f"Fehler bei der Sprachgenerierung: {e}")
-    await update.message.reply_text(text)
+
+      if os.path.exists(mp3_path) and os.path.getsize(mp3_path) > 0:
+        with open(mp3_path, "rb") as audio_file:
+          await update.message.reply_audio(
+              audio=audio_file, caption="🎙 Kais echte Stimme"
+          )
+        voice_generated = True
+        print("Geklonte Sprachnachricht erfolgreich gesendet!")
+    except Exception as e:
+      print(
+          f"Lokales Klonen fehlgeschlagen (vermutlich Render-RAM-Limit): {e}"
+      )
+
+  # Fallback: Falls das Klonen wegen des Render-Limits nicht klappt, nutzen wir eine saubere Sprachausgabe
+  if not voice_generated:
+    print(
+        "Nutze optimierten Fallback für die Sprachausgabe (Render-Ressourcen"
+        " geschont)..."
+    )
+    import edge_tts
+
+    try:
+      communicate = edge_tts.Communicate(
+          text, "de-DE-KillianNeural", pitch="-15Hz", rate="-5%"
+      )
+      await communicate.save(mp3_path)
+      with open(mp3_path, "rb") as audio_file:
+        await update.message.reply_audio(
+            audio=audio_file, caption="🎙 Kais Stimme"
+        )
+      voice_generated = True
+    except Exception as fallback_err:
+      print(f"Fallback-Fehler: {fallback_err}")
+      await update.message.reply_text(text)
 
   if os.path.exists(mp3_path):
     os.remove(mp3_path)
@@ -124,7 +184,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
   welcome_text = (
       "Hallo! Ich bin dein Kai Bot.\n"
       "• Textnachricht ➔ Text-Antwort\n"
-      "• Sprachnachricht ➔ Antwort als tiefe Sprachnachricht!"
+      "• Sprachnachricht ➔ Sprach-Antwort!"
   )
   await update.message.reply_text(welcome_text)
 
