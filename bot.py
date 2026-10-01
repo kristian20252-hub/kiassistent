@@ -28,7 +28,7 @@ genai_client = (
 )
 
 chat_histories = defaultdict(list)
-user_memories = defaultdict(str)
+user_memories = defaultdict(list)
 
 # --- 2. FLASK WEB SERVER ---
 app = Flask(__name__)
@@ -36,7 +36,7 @@ app = Flask(__name__)
 
 @app.route("/")
 def home():
-  return "Kai Bot ist online!"
+  return "Kai Bot (Menschlich & Lernfähig) ist online!"
 
 
 def run_flask():
@@ -44,39 +44,56 @@ def run_flask():
   app.run(host="0.0.0.0", port=port)
 
 
-# --- 3. DIREKTE UND STABILE TEXT-GENERIERUNG ---
+# --- 3. MENSCHLICHE & LERNFÄHIGE TEXT-GENERIERUNG ---
 async def generate_ai_response(chat_id: int, user_message: str) -> str:
-  current_memory = user_memories[chat_id]
+  history = chat_histories[chat_id]
+
+  # Gedächtnis aufbereiten
+  known_facts = (
+      "\n".join(user_memories[chat_id])
+      if user_memories[chat_id]
+      else "Noch keine tieferen Fakten bekannt."
+  )
 
   system_prompt = f"""
-    Du bist "Miss Lucy Bot" (auch bekannt als Kai Bot), eine charmante, intelligente, hilfsbereite KI-Assistentin.
-    Antworte natürlich, kurz und sympathisch auf Deutsch.
-    Gedächtnis zum Nutzer: {current_memory if current_memory else "Keine"}
+    Du bist Kai, ein extrem menschlicher, cooler, empathischer und natürlicher Gesprächspartner. 
+    Du sprichst fließend Deutsch, nutzt einen lockeren Ton (gerne auch mal Umgangssprache oder Humor) und wirkst absolut nicht wie ein Roboter oder eine steife KI.
+    
+    Das Wichtigste: Du hast ein echtes Langzeitgedächtnis über deinen Gesprächspartner. Bringe Dinge, die dir früher erzählt wurden, ganz von dir aus und organisch im Gespräch zur Sprache – so wie ein echter Mensch, der sich erinnert und echtes Interesse zeigt!
+    
+    Dinge, die du über diese Person weißt:
+    {known_facts}
     """
+
+  history.append({"role": "user", "content": user_message})
+  if len(history) > 12:
+    history = history[-12:]
 
   response_text = ""
 
-  # Wir nutzen Gemini direkt als Haupt-Engine, da es extrem stabil über das neue SDK läuft
+  # Versuch 1: Gemini asynchron mit System-Prompt
   if genai_client:
     try:
-      full_prompt = f"{system_prompt}\n\nNutzer sagt: {user_message}"
-      response = genai_client.models.generate_content(
-          model="gemini-1.5-flash", contents=full_prompt
+      formatted_history = f"{system_prompt}\n\nBisheriger Chat:\n"
+      for h in history:
+        formatted_history += f"{h['role']}: {h['content']}\n"
+      formatted_history += "assistant:"
+
+      response = await genai_client.aio.models.generate_content(
+          model="gemini-1.5-flash", contents=formatted_history
       )
       response_text = response.text
     except Exception as e:
       print(f"Gemini Fehler: {e}")
 
-  # Falls Gemini hakt, versuchen wir Groq als Backup
+  # Versuch 2: Groq als Backup
   if not response_text and groq_client:
     try:
+      messages = [{"role": "system", "content": system_prompt}] + history
       completion = groq_client.chat.completions.create(
           model="llama-3.1-70b-versatile",
-          messages=[
-              {"role": "system", "content": system_prompt},
-              {"role": "user", "content": user_message},
-          ],
-          temperature=0.7,
+          messages=messages,
+          temperature=0.8,
       )
       response_text = completion.choices[0].message.content
     except Exception as e:
@@ -84,16 +101,29 @@ async def generate_ai_response(chat_id: int, user_message: str) -> str:
 
   if not response_text:
     response_text = (
-        f"Hallo! Du hast gesagt: '{user_message}'. Wie kann ich dir helfen?"
+        "Du, da sagst du was... Erzähl mir mal genauer, wie du das meinst!"
     )
 
-  # Merken von Infos
+  # Automatisch Fakten lernen und merken
+  lower_msg = user_message.lower()
   if any(
-      k in user_message.lower()
-      for k in ["ich heiße", "mein name ist", "ich mag"]
+      kw in lower_msg
+      for kw in [
+          "ich heiße",
+          "mein name ist",
+          "ich mag",
+          "ich liebe",
+          "ich wohne",
+          "ich arbeite",
+          "mein hobby",
+          "ich spiele",
+          "ich habe",
+      ]
   ):
-    user_memories[chat_id] += f"- {user_message}\n"
+    if user_message not in user_memories[chat_id]:
+      user_memories[chat_id].append(user_message)
 
+  history.append({"role": "assistant", "content": response_text})
   return response_text
 
 
@@ -125,7 +155,7 @@ async def handle_voice_message(
     os.remove(ogg_path)
 
   if not transcribed_text.strip():
-    transcribed_text = "Hallo"
+    transcribed_text = "Hey!"
 
   ai_response = await generate_ai_response(chat_id, transcribed_text)
 
@@ -156,7 +186,8 @@ async def handle_voice_message(
 # --- 5. HANDLER ---
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
   await update.message.reply_text(
-      "Hallo! Ich bin dein Kai Bot. Schreib mir oder sprich mit mir!"
+      "Moin! Ich bin Kai. Schreib mir einfach oder schick mir eine"
+      " Sprachnachricht – wir quatschen wie ganz normale Kumpels!"
   )
 
 
