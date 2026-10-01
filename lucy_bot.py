@@ -1,5 +1,6 @@
 import os
 import logging
+import time
 from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters
 from groq import Groq
@@ -11,20 +12,37 @@ LUCY_TOKEN = os.getenv("LUCY_TELEGRAM_TOKEN")
 
 client = Groq(api_key=GROQ_API_KEY)
 
+active_lucy_chats = {}
+TIMEOUT_SECONDS = 300  # 5 Minuten Inaktivität
+
 async def handle_lucy_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
         return
 
-    chat_type = update.effective_chat.type
+    chat = update.effective_chat
+    chat_id = chat.id
+    chat_type = chat.type
     message_text = update.message.text
     text_lower = message_text.lower()
+    current_time = time.time()
 
-    # Gruppenfilter: Wenn in Gruppe, nur reagieren, wenn "lucy" oder "miss lucy" fällt
+    is_named = "lucy" in text_lower or "miss lucy" in text_lower
+    
+    is_active = False
     if chat_type in ["group", "supergroup"]:
-        if "lucy" not in text_lower and "miss lucy" not in text_lower:
+        if chat_id in active_lucy_chats:
+            if current_time - active_lucy_chats[chat_id] < TIMEOUT_SECONDS:
+                is_active = True
+            else:
+                del active_lucy_chats[chat_id]
+
+        if is_named:
+            active_lucy_chats[chat_id] = current_time
+            is_active = True
+
+        if not is_active:
             return
 
-    # Persona für Miss Lucy
     system_prompt = (
         "Du bist Miss Lucy, eine treue und liebevolle Partnerin für Kai. "
         "Du wurdest erschaffen von Heiko aus dem Schwabenländle. "
@@ -41,6 +59,10 @@ async def handle_lucy_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             temperature=0.7,
         )
         reply = completion.choices[0].message.content
+        
+        if chat_type in ["group", "supergroup"]:
+            active_lucy_chats[chat_id] = time.time()
+            
         await update.message.reply_text(reply)
     except Exception as e:
         logging.error(f"Fehler bei Miss Lucy: {e}")
@@ -50,7 +72,7 @@ def main():
     app = ApplicationBuilder().token(LUCY_TOKEN).build()
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_lucy_message))
     
-    print("Miss Lucy Bot läuft...")
+    print("Miss Lucy Bot läuft mit Konversations-Gedächtnis...")
     app.run_polling()
 
 if __name__ == "__main__":
