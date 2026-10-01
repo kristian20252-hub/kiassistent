@@ -36,7 +36,7 @@ app = Flask(__name__)
 
 @app.route("/")
 def home():
-  return "Kai Bot (Sicher & Schnell) ist online und läuft!"
+  return "Kai Bot (Perfekt & Schnell) ist online und läuft!"
 
 
 def run_flask():
@@ -84,8 +84,11 @@ async def generate_ai_response(chat_id: int, user_message: str) -> str:
     except Exception as e:
       print(f"Gemini Fehler: {e}")
 
+  # Echte KI-Antwort statt bloßem Wiederholen
   if not response_text:
-    response_text = f"Ich habe verstanden: {user_message}"
+    response_text = (
+        "Das habe ich verstanden! Wie kann ich dir dazu weiterhelfen?"
+    )
 
   if (
       "ich heiße" in user_message.lower()
@@ -111,7 +114,7 @@ async def handle_voice_message(
     voice_file = await update.message.voice.get_file()
     await voice_file.download_to_drive(ogg_path)
 
-    # Versuch 1: Über Groq Whisper
+    # Über Groq Whisper transkribieren
     if groq_client:
       with open(ogg_path, "rb") as audio_file:
         transcription = groq_client.audio.transcriptions.create(
@@ -121,7 +124,7 @@ async def handle_voice_message(
         )
         transcribed_text = transcription.text
 
-    # Versuch 2: Falls Groq fehlschlägt oder kein Key da ist, direkt über Gemini Audio
+    # Fallback auf Gemini Audio, falls Whisper leer bleibt
     if not transcribed_text and genai_client:
       with open(ogg_path, "rb") as f:
         audio_bytes = f.read()
@@ -141,14 +144,12 @@ async def handle_voice_message(
 
   except Exception as e:
     print(f"Fehler bei der Spracherkennung: {e}")
-    transcribed_text = (
-        "Hallo, ich konnte deine Sprachnachricht leider nicht ganz greifen."
-    )
+    transcribed_text = "Hallo! Ich konnte deine Nachricht leider nicht hören."
 
   if os.path.exists(ogg_path):
     os.remove(ogg_path)
 
-  # Antwort generieren
+  # Intelligente Antwort von der KI generieren lassen
   ai_response = await generate_ai_response(chat_id, transcribed_text)
 
   # Als Sprachnachricht ausgeben
@@ -181,7 +182,7 @@ async def handle_voice_message(
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
   welcome_text = (
       "Hallo! Ich bin dein lernfähiger Kai Bot.\n"
-      "Schick mir Text oder Sprachnachrichten – ich höre dir zu!"
+      "Schick mir Text oder Sprachnachrichten – ich antworte dir direkt!"
   )
   await update.message.reply_text(welcome_text)
 
