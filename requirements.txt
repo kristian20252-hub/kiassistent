@@ -4,6 +4,6 @@ groq
 google-genai
 requests
 pillow
-moviepy
+moviepy==1.0.3
 edge-tts
 yt-dlp
