@@ -36,7 +36,7 @@ app = Flask(__name__)
 
 @app.route("/")
 def home():
-  return "Kai Bot (Menschlich & Lernfähig) ist online!"
+  return "Kai Bot (Stabil & Menschlich) ist online!"
 
 
 def run_flask():
@@ -44,7 +44,7 @@ def run_flask():
   app.run(host="0.0.0.0", port=port)
 
 
-# --- 3. MENSCHLICHE & LERNFÄHIGE TEXT-GENERIERUNG ---
+# --- 3. STABILE & LERNFÄHIGE TEXT-GENERIERUNG ---
 async def generate_ai_response(chat_id: int, user_message: str) -> str:
   history = chat_histories[chat_id]
 
@@ -52,35 +52,30 @@ async def generate_ai_response(chat_id: int, user_message: str) -> str:
   known_facts = (
       "\n".join(user_memories[chat_id])
       if user_memories[chat_id]
-      else "Noch keine tieferen Fakten bekannt."
+      else "Noch keine Fakten bekannt."
   )
 
   system_prompt = f"""
     Du bist Kai, ein extrem menschlicher, cooler, empathischer und natürlicher Gesprächspartner. 
-    Du sprichst fließend Deutsch, nutzt einen lockeren Ton (gerne auch mal Umgangssprache oder Humor) und wirkst absolut nicht wie ein Roboter oder eine steife KI.
+    Du sprichst fließend Deutsch, nutzt einen lockeren Ton und wirkst wie ein echter Kumpel.
+    Du hast ein Langzeitgedächtnis über deinen Gesprächspartner und bringst bekannte Fakten organisch ein, wenn sie passen!
     
-    Das Wichtigste: Du hast ein echtes Langzeitgedächtnis über deinen Gesprächspartner. Bringe Dinge, die dir früher erzählt wurden, ganz von dir aus und organisch im Gespräch zur Sprache – so wie ein echter Mensch, der sich erinnert und echtes Interesse zeigt!
-    
-    Dinge, die du über diese Person weißt:
+    Wichtige Fakten über diesen Nutzer:
     {known_facts}
     """
 
-  history.append({"role": "user", "content": user_message})
-  if len(history) > 12:
-    history = history[-12:]
-
   response_text = ""
 
-  # Versuch 1: Gemini asynchron mit System-Prompt
+  # Versuch 1: Gemini mit sauberer Konfiguration für das neue google-genai SDK
   if genai_client:
     try:
-      formatted_history = f"{system_prompt}\n\nBisheriger Chat:\n"
-      for h in history:
-        formatted_history += f"{h['role']}: {h['content']}\n"
-      formatted_history += "assistant:"
-
       response = await genai_client.aio.models.generate_content(
-          model="gemini-1.5-flash", contents=formatted_history
+          model="gemini-2.5-flash",
+          contents=user_message,
+          config=types.GenerateContentConfig(
+              system_instruction=system_prompt,
+              temperature=0.8,
+          ),
       )
       response_text = response.text
     except Exception as e:
@@ -89,9 +84,13 @@ async def generate_ai_response(chat_id: int, user_message: str) -> str:
   # Versuch 2: Groq als Backup
   if not response_text and groq_client:
     try:
-      messages = [{"role": "system", "content": system_prompt}] + history
+      messages = (
+          [{"role": "system", "content": system_prompt}]
+          + history
+          + [{"role": "user", "content": user_message}]
+      )
       completion = groq_client.chat.completions.create(
-          model="llama-3.1-70b-versatile",
+          model="llama-3.3-70b-versatile",
           messages=messages,
           temperature=0.8,
       )
@@ -100,9 +99,7 @@ async def generate_ai_response(chat_id: int, user_message: str) -> str:
       print(f"Groq Fehler: {e}")
 
   if not response_text:
-    response_text = (
-        "Du, da sagst du was... Erzähl mir mal genauer, wie du das meinst!"
-    )
+    response_text = "Jo, da sagst du was... Erzähl mal genauer!"
 
   # Automatisch Fakten lernen und merken
   lower_msg = user_message.lower()
@@ -123,7 +120,12 @@ async def generate_ai_response(chat_id: int, user_message: str) -> str:
     if user_message not in user_memories[chat_id]:
       user_memories[chat_id].append(user_message)
 
+  # Verlauf aktualisieren
+  history.append({"role": "user", "content": user_message})
   history.append({"role": "assistant", "content": response_text})
+  if len(history) > 12:
+    chat_histories[chat_id] = history[-12:]
+
   return response_text
 
 
@@ -187,7 +189,7 @@ async def handle_voice_message(
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
   await update.message.reply_text(
       "Moin! Ich bin Kai. Schreib mir einfach oder schick mir eine"
-      " Sprachnachricht – wir quatschen wie ganz normale Kumpels!"
+      " Sprachnachricht – wir quatschen ganz normal!"
   )
 
 
