@@ -36,7 +36,7 @@ app = Flask(__name__)
 
 @app.route("/")
 def home():
-  return "Kai Bot (Whisper & Schnell) ist online und läuft!"
+  return "Kai Bot (Sicher & Schnell) ist online und läuft!"
 
 
 def run_flask():
@@ -85,7 +85,7 @@ async def generate_ai_response(chat_id: int, user_message: str) -> str:
       print(f"Gemini Fehler: {e}")
 
   if not response_text:
-    response_text = "Hallo! Ich habe deine Nachricht erhalten."
+    response_text = f"Ich habe verstanden: {user_message}"
 
   if (
       "ich heiße" in user_message.lower()
@@ -98,7 +98,7 @@ async def generate_ai_response(chat_id: int, user_message: str) -> str:
   return response_text
 
 
-# --- 4. SPRACHNACHRICHT MIT WHISPER TRANSKRIBIEREN & BEANTWORTEN ---
+# --- 4. SPRACHNACHRICHT TRANSKRIBIEREN & BEANTWORTEN ---
 async def handle_voice_message(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ):
@@ -108,11 +108,10 @@ async def handle_voice_message(
   transcribed_text = ""
 
   try:
-    # Sprachdatei von Telegram herunterladen
     voice_file = await update.message.voice.get_file()
     await voice_file.download_to_drive(ogg_path)
 
-    # Über Groq Whisper in Text umwandeln
+    # Versuch 1: Über Groq Whisper
     if groq_client:
       with open(ogg_path, "rb") as audio_file:
         transcription = groq_client.audio.transcriptions.create(
@@ -121,23 +120,38 @@ async def handle_voice_message(
             language="de",
         )
         transcribed_text = transcription.text
-    else:
-      transcribed_text = "Hallo"
+
+    # Versuch 2: Falls Groq fehlschlägt oder kein Key da ist, direkt über Gemini Audio
+    if not transcribed_text and genai_client:
+      with open(ogg_path, "rb") as f:
+        audio_bytes = f.read()
+      response = genai_client.models.generate_content(
+          model="gemini-2.5-flash",
+          contents=[
+              types.Part.from_bytes(data=audio_bytes, mime_type="audio/ogg"),
+              (
+                  "Transkribiere diese Sprachnachricht exakt ins Deutsche und"
+                  " gib nur den Text aus."
+              ),
+          ],
+      )
+      transcribed_text = response.text
 
     print(f"Erkannter Text: {transcribed_text}")
 
   except Exception as e:
-    print(f"Whisper Fehler: {e}")
-    transcribed_text = "Hallo, ich konnte deine Sprachnachricht hören."
+    print(f"Fehler bei der Spracherkennung: {e}")
+    transcribed_text = (
+        "Hallo, ich konnte deine Sprachnachricht leider nicht ganz greifen."
+    )
 
-  # Aufräumen der Eingangs-Audiodatei
   if os.path.exists(ogg_path):
     os.remove(ogg_path)
 
-  # Intelligente Antwort über das normale KI-System generieren lassen
+  # Antwort generieren
   ai_response = await generate_ai_response(chat_id, transcribed_text)
 
-  # Antwort per edge-tts als Sprachnachricht ausgeben
+  # Als Sprachnachricht ausgeben
   try:
     import edge_tts
 
@@ -167,7 +181,7 @@ async def handle_voice_message(
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
   welcome_text = (
       "Hallo! Ich bin dein lernfähiger Kai Bot.\n"
-      "Schick mir Text oder Sprachnachrichten – ich verstehe beides perfekt!"
+      "Schick mir Text oder Sprachnachrichten – ich höre dir zu!"
   )
   await update.message.reply_text(welcome_text)
 
