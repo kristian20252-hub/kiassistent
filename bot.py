@@ -28,6 +28,7 @@ genai_client = (
 )
 
 chat_histories = defaultdict(list)
+user_memories = defaultdict(str)
 
 # --- 2. FLASK WEB SERVER (HÄLT DEN BOT AUF RENDER WACH) ---
 app = Flask(__name__)
@@ -35,7 +36,7 @@ app = Flask(__name__)
 
 @app.route("/")
 def home():
-  return "Kai Bot ist online und läuft!"
+  return "Kai Bot (Lernfähig & Schnell) ist online und läuft!"
 
 
 def run_flask():
@@ -43,26 +44,31 @@ def run_flask():
   app.run(host="0.0.0.0", port=port)
 
 
-# --- 3. SYSTEM PROMPT / BOT PERSONA ---
-SYSTEM_PROMPT = """
-Du bist "Miss Lucy Bot" (auch bekannt als Kai Bot), eine charmante, intelligente, hilfsbereite und leicht humorvolle KI-Assistentin.
-Du antwortest präzise, natürlich und sympathisch auf Deutsch.
-"""
-
-
-# --- 4. TEXT-GENERIERUNG VIA GROQ / GEMINI ---
+# --- 3. TEXT-GENERIERUNG MIT LERN- UND GEDÄCHTNISFUNKTION ---
 async def generate_ai_response(chat_id: int, user_message: str) -> str:
   history = chat_histories[chat_id]
+
+  current_memory = user_memories[chat_id]
+  system_prompt = f"""
+    Du bist "Miss Lucy Bot" (auch bekannt als Kai Bot), eine charmante, intelligente, hilfsbereite und leicht humorvolle KI-Assistentin.
+    Du antwortest präzise, natürlich und sympathisch auf Deutsch.
+    
+    Wichtige Fakten, die du bereits über diesen Nutzer gelernt hast und unbedingt beachten sollst:
+    {current_memory if current_memory else "Noch keine speziellen Fakten gespeichert."}
+    
+    Wenn der Nutzer dir neue wichtige persönliche Infos (z.B. seinen Namen, Vorlieben, Hobbys oder Projekte) nennt, merke sie dir.
+    """
+
   history.append({"role": "user", "content": user_message})
 
-  if len(history) > 10:
-    history = history[-10:]
+  if len(history) > 12:
+    history = history[-12:]
 
   response_text = ""
 
   if groq_client:
     try:
-      messages = [{"role": "system", "content": SYSTEM_PROMPT}] + history
+      messages = [{"role": "system", "content": system_prompt}] + history
       completion = groq_client.chat.completions.create(
           model="llama-3.3-70b-versatile",
           messages=messages,
@@ -86,22 +92,29 @@ async def generate_ai_response(chat_id: int, user_message: str) -> str:
         "Hallo! Ich habe deine Nachricht erhalten. Wie kann ich dir helfen?"
     )
 
+  if (
+      "ich heiße" in user_message.lower()
+      or "mein name ist" in user_message.lower()
+      or "ich mag" in user_message.lower()
+  ):
+    user_memories[chat_id] += f"- {user_message}\n"
+
   history.append({"role": "assistant", "content": response_text})
   return response_text
 
 
-# --- 5. SPRACHNACHRICHT MIT NATÜRLICHER, ANGENEHMER STIMME ---
+# --- 4. SPRACHNACHRICHT (SCHNELLER & ETWAS HÖHER) ---
 async def send_voice_reply(update: Update, text: str):
   mp3_path = f"kai_voice_{update.effective_chat.id}.mp3"
 
   try:
     import edge_tts
 
-    # Natürliche Neural-Stimme mit neutralem, angenehmem Pitch (+0Hz)
     voice_name = "de-DE-KillianNeural"
 
+    # pitch="+3Hz" macht die Stimme etwas höher, rate="+5%" lässt sie schneller sprechen
     communicate = edge_tts.Communicate(
-        text, voice_name, pitch="+0Hz", rate="-2%"
+        text, voice_name, pitch="+3Hz", rate="+5%"
     )
     await communicate.save(mp3_path)
 
@@ -122,12 +135,11 @@ async def send_voice_reply(update: Update, text: str):
     os.remove(mp3_path)
 
 
-# --- 6. TELEGRAM HANDLER ---
+# --- 5. TELEGRAM HANDLER ---
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
   welcome_text = (
-      "Hallo! Ich bin dein Kai Bot.\n"
-      "• Textnachricht ➔ Text-Antwort\n"
-      "• Sprachnachricht ➔ Sprach-Antwort!"
+      "Hallo! Ich bin dein lernfähiger Kai Bot.\n"
+      "Erzähl mir gerne etwas über dich – ich merke es mir!"
   )
   await update.message.reply_text(welcome_text)
 
@@ -146,13 +158,13 @@ async def handle_voice_message(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ):
   chat_id = update.effective_chat.id
-  prompt_text = "Hallo! Danke für deine Sprachnachricht. Wie kann ich dir heute weiterhelfen?"
+  prompt_text = "Hallo! Danke für deine Sprachnachricht. Was gibt es Neues?"
 
   ai_response = await generate_ai_response(chat_id, prompt_text)
   await send_voice_reply(update, ai_response)
 
 
-# --- 7. BOT STARTEN ---
+# --- 6. BOT STARTEN ---
 def main():
   Thread(target=run_flask, daemon=True).start()
 
