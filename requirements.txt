@@ -7,3 +7,4 @@ pillow
 moviepy==1.0.3
 edge-tts
 yt-dlp
+elevenlabs
