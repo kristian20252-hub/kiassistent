@@ -14,14 +14,6 @@ from google.genai import types
 from gradio_client import Client, handle_file
 from groq import Groq
 import moviepy.editor as mp
-include_elevenlabs = False
-try:
-  from elevenlabs.client import ElevenLabs
-
-  include_elevenlabs = True
-except ImportError:
-  pass
-
 from PIL import Image, ImageDraw, ImageFont
 import requests
 from telegram import Update
@@ -38,23 +30,16 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 HF_TOKEN = os.getenv("HF_TOKEN")
-ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
-ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID")
 
 # KI-Clients initialisieren
 groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 genai_client = (
     genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 )
-eleven_client = (
-    ElevenLabs(api_key=ELEVENLABS_API_KEY)
-    if (include_elevenlabs and ELEVENLABS_API_KEY)
-    else None
-)
 
 chat_histories = defaultdict(list)
 
-# --- 2. FLASK WEB SERVER ---
+# --- 2. FLASK WEB SERVER (HÄLT DEN BOT AUF RENDER WACH) ---
 app = Flask(__name__)
 
 
@@ -68,7 +53,7 @@ def run_flask():
   app.run(host="0.0.0.0", port=port)
 
 
-# --- 3. SYSTEM PROMPT ---
+# --- 3. SYSTEM PROMPT / BOT PERSONA ---
 SYSTEM_PROMPT = """
 Du bist "Miss Lucy Bot" (auch bekannt als Kai Bot), eine charmante, intelligente, hilfsbereite und leicht humorvolle KI-Assistentin.
 Du antwortest präzise, natürlich und sympathisch auf Deutsch.
@@ -107,74 +92,54 @@ async def generate_ai_response(chat_id: int, user_message: str) -> str:
       print(f"Gemini Fehler: {e}")
 
   if not response_text:
-    response_text = "Hallo! Ich habe deine Nachricht erhalten. Wie kann ich dir weiterhelfen?"
+    response_text = (
+        "Hallo! Ich habe deine Nachricht erhalten. Wie kann ich dir helfen?"
+    )
 
   history.append({"role": "assistant", "content": response_text})
   return response_text
 
 
-# --- 5. SPRACHNACHRICHT ERZEUGEN ---
+# --- 5. SPRACHNACHRICHT ERZEUGEN (ÖFFENTLICHE HF-SPACES & FALLBACK) ---
 async def send_voice_reply(update: Update, text: str):
   mp3_path = f"kai_voice_{update.effective_chat.id}.mp3"
   voice_generated = False
 
-  # Strategie 1: ElevenLabs (Falls API Key & Voice ID vorhanden)
-  if eleven_client and ELEVENLABS_VOICE_ID:
-    try:
-      print("Versuche Voice Cloning über ElevenLabs...")
-      audio_generator = eleven_client.generate(
-          text=text, voice=ELEVENLABS_VOICE_ID, model="eleven_multilingual_v2"
-      )
-      with open(mp3_path, "wb") as f:
-        for chunk in audio_generator:
-          f.write(chunk)
+  # Öffentliche XTTS-v2 Spaces als Multi-Source-Fallback
+  public_spaces = ["coqui/XTTS-v2", "tts-ms/XTTS-v2", "FFR/XTTS-v2"]
 
-      with open(mp3_path, "rb") as audio_file:
+  for space_name in public_spaces:
+    try:
+      print(f"Versuche Voice Cloning über HF Space: {space_name}")
+      client = Client(space_name, hf_token=HF_TOKEN)
+      result = client.predict(
+          prompt=text,
+          language="de",
+          audio_file_pth=handle_file("meine_stimme.mp3"),
+          mic_file_path=None,
+          use_mic=False,
+          voice_cleanup=True,
+          no_lang_auto_detect=False,
+          agree=True,
+          api_name="/predict",
+      )
+      voice_output_path = result[1] if isinstance(result, tuple) else result
+
+      with open(voice_output_path, "rb") as audio_file:
         await update.message.reply_audio(
             audio=audio_file,
             title="Kais Sprachnachricht",
             performer="Kai Bot",
-            caption="🎙 Kais Stimme (ElevenLabs Geklont)",
+            caption="🎙 Kais Stimme (Geklont)",
         )
       voice_generated = True
+      break
     except Exception as e:
-      print(f"❌ ElevenLabs Fehler: {e}")
+      print(f"❌ Space {space_name} nicht erreichbar: {e}")
 
-  # Strategie 2: Hugging Face XTTS-v2 Spaces
+  # Fallback auf eine saubere deutsche Standard-Stimme, falls HF blockiert
   if not voice_generated:
-    spaces = ["tts-ms/XTTS-v2", "coqui/XTTS-v2", "FFR/XTTS-v2"]
-    for space_name in spaces:
-      try:
-        print(f"Versuche Voice Cloning über HF Space: {space_name}")
-        client = Client(space_name, hf_token=HF_TOKEN)
-        result = client.predict(
-            prompt=text,
-            language="de",
-            audio_file_pth=handle_file("meine_stimme.mp3"),
-            mic_file_path=None,
-            use_mic=False,
-            voice_cleanup=True,
-            no_lang_auto_detect=False,
-            agree=True,
-            api_name="/predict",
-        )
-        voice_output_path = result[1] if isinstance(result, tuple) else result
-
-        with open(voice_output_path, "rb") as audio_file:
-          await update.message.reply_audio(
-              audio=audio_file,
-              title="Kais Sprachnachricht",
-              performer="Kai Bot",
-              caption="🎙 Kais Stimme (Hugging Face Geklont)",
-          )
-        voice_generated = True
-        break
-      except Exception as e:
-        print(f"❌ HF Space Fehler bei {space_name}: {e}")
-
-  # Fallback: Edge TTS Standardstimme
-  if not voice_generated:
-    print("⚠️ Generiere Standard-Stimme als Fallback...")
+    print("⚠️ Nutzen sauberen Fallback (Edge-TTS)...")
     try:
       communicate = edge_tts.Communicate(text, "de-DE-ConradNeural")
       await communicate.save(mp3_path)
@@ -214,7 +179,7 @@ async def handle_voice_message(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ):
   chat_id = update.effective_chat.id
-  prompt_text = "Hallo! Danke für deine Sprachnachricht. Ich kann dir gerne direkt hier als Sprachnachricht antworten!"
+  prompt_text = "Hallo! Danke für deine Sprachnachricht. Wie kann ich dir heute weiterhelfen?"
 
   ai_response = await generate_ai_response(chat_id, prompt_text)
   await update.message.reply_text(ai_response)
