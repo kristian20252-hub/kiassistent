@@ -13,7 +13,7 @@ LUCY_TOKEN = os.getenv("LUCY_TELEGRAM_TOKEN")
 client = Groq(api_key=GROQ_API_KEY)
 
 active_lucy_chats = {}
-TIMEOUT_SECONDS = 300
+TIMEOUT_SECONDS = 300  # 5 Minuten Inaktivität
 
 async def handle_lucy_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
@@ -51,7 +51,7 @@ async def handle_lucy_message(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     try:
         completion = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model="llama3-70b-8192",  # Korrigiertes, stabiles Modell
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": message_text}
@@ -66,7 +66,6 @@ async def handle_lucy_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text(reply)
     except Exception as e:
         logging.error(f"Fehler bei Miss Lucy: {e}")
-        # Auch hier den echten Fehler ausgeben
         await update.message.reply_text(f"Groq-Fehler: {str(e)}")
 
 def main():
