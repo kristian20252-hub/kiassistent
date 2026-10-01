@@ -29,7 +29,7 @@ genai_client = (
 
 chat_histories = defaultdict(list)
 
-# --- 2. FLASK WEB SERVER ---
+# --- 2. FLASK WEB SERVER (HÄLT DEN BOT AUF RENDER WACH) ---
 app = Flask(__name__)
 
 
@@ -50,7 +50,7 @@ Du antwortest präzise, natürlich und sympathisch auf Deutsch.
 """
 
 
-# --- 4. TEXT-GENERIERUNG ---
+# --- 4. TEXT-GENERIERUNG VIA GROQ / GEMINI ---
 async def generate_ai_response(chat_id: int, user_message: str) -> str:
   history = chat_histories[chat_id]
   history.append({"role": "user", "content": user_message})
@@ -90,28 +90,33 @@ async def generate_ai_response(chat_id: int, user_message: str) -> str:
   return response_text
 
 
-# --- 5. SPRACHNACHRICHT MIT NATÜRLICHER STIMME ---
+# --- 5. SPRACHNACHRICHT MIT STABILER & NATÜRLICHER STIMME ---
 async def send_voice_reply(update: Update, text: str):
   mp3_path = f"kai_voice_{update.effective_chat.id}.mp3"
 
   try:
     import edge_tts
 
-    # Wir nutzen eine besonders natürliche und angenehme deutsche Neural-Stimme
-    voice_name = "de-DE-FlorianNeural"
+    # Wir nutzen die stabile, sehr natürliche Neural-Stimme mit leicht angepasstem Pitch
+    voice_name = "de-DE-KillianNeural"
 
     communicate = edge_tts.Communicate(
-        text, voice_name, pitch="+0Hz", rate="-2%"
+        text, voice_name, pitch="-5Hz", rate="-2%"
     )
     await communicate.save(mp3_path)
 
-    with open(mp3_path, "rb") as audio_file:
-      await update.message.reply_audio(
-          audio=audio_file, caption="🎙 Kais Sprachnachricht"
-      )
-    print("Natürliche Sprachnachricht erfolgreich gesendet!")
+    if os.path.exists(mp3_path) and os.path.getsize(mp3_path) > 0:
+      with open(mp3_path, "rb") as audio_file:
+        await update.message.reply_audio(
+            audio=audio_file, caption="🎙 Kais Sprachnachricht"
+        )
+      print("Sprachnachricht erfolgreich gesendet!")
+    else:
+      raise Exception("MP3-Datei konnte nicht erstellt werden.")
+
   except Exception as e:
     print(f"Fehler bei der Sprachgenerierung: {e}")
+    # Nur im absoluten Notfall als Text ausgeben, damit man sieht, falls etwas hakt
     await update.message.reply_text(text)
 
   if os.path.exists(mp3_path):
@@ -123,7 +128,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
   welcome_text = (
       "Hallo! Ich bin dein Kai Bot.\n"
       "• Textnachricht ➔ Text-Antwort\n"
-      "• Sprachnachricht ➔ Natürliche Sprach-Antwort!"
+      "• Sprachnachricht ➔ Sprach-Antwort!"
   )
   await update.message.reply_text(welcome_text)
 
