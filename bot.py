@@ -90,18 +90,18 @@ async def generate_ai_response(chat_id: int, user_message: str) -> str:
   return response_text
 
 
-# --- 5. SPRACHNACHRICHT MIT STABILER & NATÜRLICHER STIMME ---
+# --- 5. SPRACHNACHRICHT MIT NATÜRLICHER, ANGENEHMER STIMME ---
 async def send_voice_reply(update: Update, text: str):
   mp3_path = f"kai_voice_{update.effective_chat.id}.mp3"
 
   try:
     import edge_tts
 
-    # Wir nutzen die stabile, sehr natürliche Neural-Stimme mit leicht angepasstem Pitch
+    # Natürliche Neural-Stimme mit neutralem, angenehmem Pitch (+0Hz)
     voice_name = "de-DE-KillianNeural"
 
     communicate = edge_tts.Communicate(
-        text, voice_name, pitch="-5Hz", rate="-2%"
+        text, voice_name, pitch="+0Hz", rate="-2%"
     )
     await communicate.save(mp3_path)
 
@@ -116,7 +116,6 @@ async def send_voice_reply(update: Update, text: str):
 
   except Exception as e:
     print(f"Fehler bei der Sprachgenerierung: {e}")
-    # Nur im absoluten Notfall als Text ausgeben, damit man sieht, falls etwas hakt
     await update.message.reply_text(text)
 
   if os.path.exists(mp3_path):
