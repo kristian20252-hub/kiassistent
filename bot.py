@@ -2,19 +2,14 @@ import asyncio
 from collections import defaultdict
 import io
 import os
-import random
-import re
 from threading import Thread
-import urllib.parse
 
 import edge_tts
 from flask import Flask
 from google import genai
 from google.genai import types
-from gradio_client import Client, handle_file
 from groq import Groq
-import moviepy.editor as mp
-from PIL import Image, ImageDraw, ImageFont
+import pyttsx3
 import requests
 from telegram import Update
 from telegram.ext import (
@@ -29,7 +24,6 @@ from telegram.ext import (
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-HF_TOKEN = os.getenv("HF_TOKEN")
 
 # KI-Clients initialisieren
 groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
@@ -100,68 +94,26 @@ async def generate_ai_response(chat_id: int, user_message: str) -> str:
   return response_text
 
 
-# --- 5. SPRACHNACHRICHT MIT DEINER ECHTEN STIMME (LOKALE DATEI) ---
+# --- 5. SPRACHNACHRICHT MIT OPTIMIERTER TIEFER STIMME ---
 async def send_voice_reply(update: Update, text: str):
   mp3_path = f"kai_voice_{update.effective_chat.id}.mp3"
-  voice_generated = False
 
-  # Wir nutzen alternative öffentliche XTTS-Instanzen, die deine lokale 'meine_stimme.mp3' einlesen
-  public_spaces = [
-      "daswer1/XTTS-v2",
-      "syntheticai/XTTS-v2",
-      "coqui/XTTS-v2",
-  ]
-
-  for space_name in public_spaces:
-    try:
-      print(
-          f"Versuche Stimmklon über Space '{space_name}' mit"
-          " 'meine_stimme.mp3'..."
-      )
-      client = Client(space_name, hf_token=HF_TOKEN)
-
-      result = client.predict(
-          prompt=text,
-          language="de",
-          audio_file_pth=handle_file("meine_stimme.mp3"),
-          mic_file_path=None,
-          use_mic=False,
-          voice_cleanup=True,
-          no_lang_auto_detect=False,
-          agree=True,
-          api_name="/predict",
-      )
-
-      voice_output_path = result[1] if isinstance(result, tuple) else result
-
-      with open(voice_output_path, "rb") as audio_file:
-        await update.message.reply_audio(
-            audio=audio_file,
-            title="Kais Sprachnachricht",
-            performer="Kai Bot",
-            caption="🎙 Deine geklonte Stimme",
-        )
-      voice_generated = True
-      print("Erfolgreich mit deiner echten Stimme geantwortet!")
-      break
-    except Exception as e:
-      print(f"⚠ Space {space_name} fehlgeschlagen: {e}")
-
-  # Notfall-Fallback, falls alle alternativen Server unerreichbar sind
-  if not voice_generated:
-    print(
-        "⚠️ Alle Klone-Server blockiert. Verwende temporär Standard-Stimme..."
+  try:
+    # Wir nutzen hier eine speziell abgesenkte, kräftige deutsche Neural-Stimme mit angepasster Geschwindigkeit,
+    # die perfekt zu einer männlichen Stimmage passt und stabil auf Render läuft.
+    communicate = edge_tts.Communicate(
+        text, "de-DE-KillianNeural", pitch="-20Hz", rate="-8%"
     )
-    try:
-      communicate = edge_tts.Communicate(text, "de-DE-KillianNeural")
-      await communicate.save(mp3_path)
-      with open(mp3_path, "rb") as audio_file:
-        await update.message.reply_audio(
-            audio=audio_file, caption="🎙 Kais Stimme (Fallback)"
-        )
-    except Exception as fallback_err:
-      print(f"Fallback-Fehler: {fallback_err}")
-      await update.message.reply_text(text)
+    await communicate.save(mp3_path)
+
+    with open(mp3_path, "rb") as audio_file:
+      await update.message.reply_audio(
+          audio=audio_file, caption="🎙 Kais Stimme (Tief & Angepasst)"
+      )
+    print("Sprachnachricht erfolgreich gesendet!")
+  except Exception as e:
+    print(f"Fehler bei der Sprachgenerierung: {e}")
+    await update.message.reply_text(text)
 
   if os.path.exists(mp3_path):
     os.remove(mp3_path)
@@ -171,8 +123,8 @@ async def send_voice_reply(update: Update, text: str):
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
   welcome_text = (
       "Hallo! Ich bin dein Kai Bot.\n"
-      "• Text ➔ Text-Antwort\n"
-      "• Sprachnachricht ➔ Antwort in deiner echten Stimme!"
+      "• Textnachricht ➔ Text-Antwort\n"
+      "• Sprachnachricht ➔ Antwort als tiefe Sprachnachricht!"
   )
   await update.message.reply_text(welcome_text)
 
