@@ -32,7 +32,7 @@ def home():
 
 
 def run_flask():
-    port = int(os.environ.get("PORT", 8081))  # Kann auf Render denselben Port nutzen oder einen separaten
+    port = int(os.environ.get("PORT", 8081))
     flask_app.run(host="0.0.0.0", port=port)
 
 
@@ -43,7 +43,7 @@ def keep_alive():
 
 
 # --- 2. API KEYS & CLIENTS ---
-TELEGRAM_TOKEN = os.environ.get("LUCY_TELEGRAM_TOKEN")  # Wichtig: Ihr eigener Token!
+TELEGRAM_TOKEN = os.environ.get("LUCY_TELEGRAM_TOKEN")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
@@ -60,20 +60,19 @@ BASE_SYSTEM_PROMPT = (
 
 user_chat_history = defaultdict(list)
 user_memories = defaultdict(list)
-active_chats = {}  # Speichert aktive Gruppengespräche {chat_id: timestamp}
-TIMEOUT_SECONDS = 300  # 5 Minuten Inaktivität
+active_chats = {}
+TIMEOUT_SECONDS = 300
 MAX_HISTORY = 10
 
 
 def is_chat_allowed(update: Update) -> bool:
-    """Prüft in Gruppen, ob Miss Lucy angesprochen wurde oder im aktiven Gespräch ist."""
     chat = update.effective_chat
     if not chat:
         return True
     
     chat_type = chat.type
     if chat_type not in ["group", "supergroup"]:
-        return True  # Im Privatchat immer erlauben
+        return True
 
     message = update.message or update.effective_message
     if not message or not message.text:
@@ -85,7 +84,6 @@ def is_chat_allowed(update: Update) -> bool:
 
     is_named = "lucy" in text_lower or "miss lucy" in text_lower
 
-    # Aktives Gespräch prüfen
     is_active = False
     if chat_id in active_chats:
         if current_time - active_chats[chat_id] < TIMEOUT_SECONDS:
@@ -115,7 +113,7 @@ def get_chat_models():
             if hasattr(m, "id")
             and not any(kw in m.id.lower() for kw in EXCLUDED)
         ]
-        priority = ["llama3-70b-8192", "llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
+        priority = ["llama-3.1-8b-instant"]
         sorted_models = [m for m in priority if m in valid]
         for m in valid:
             if m not in sorted_models:
@@ -123,7 +121,7 @@ def get_chat_models():
         return sorted_models
     except Exception as e:
         print(f"Fehler bei Groq: {e}")
-        return ["llama3-70b-8192", "llama-3.3-70b-versatile"]
+        return ["llama-3.1-8b-instant"]
 
 
 def get_gemini_models():
@@ -195,7 +193,6 @@ async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def send_voice_reply(update: Update, text: str):
     mp3_path = "lucy_edge_voice.mp3"
     try:
-        # Verwende eine natürliche deutsche Frauenstimme (Katja)
         communicate = edge_tts.Communicate(text, "de-DE-KatjaNeural")
         await communicate.save(mp3_path)
 
