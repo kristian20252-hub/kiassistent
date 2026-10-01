@@ -36,7 +36,7 @@ app = Flask(__name__)
 
 @app.route("/")
 def home():
-  return "Kai Bot (Lernfähig & Schnell) ist online und läuft!"
+  return "Kai Bot (Hörfähig & Schnell) ist online und läuft!"
 
 
 def run_flask():
@@ -44,23 +44,20 @@ def run_flask():
   app.run(host="0.0.0.0", port=port)
 
 
-# --- 3. TEXT-GENERIERUNG MIT LERN- UND GEDÄCHTNISFUNKTION ---
+# --- 3. TEXT-GENERIERUNG FÜR TEXTNACHRICHTEN ---
 async def generate_ai_response(chat_id: int, user_message: str) -> str:
   history = chat_histories[chat_id]
-
   current_memory = user_memories[chat_id]
+
   system_prompt = f"""
     Du bist "Miss Lucy Bot" (auch bekannt als Kai Bot), eine charmante, intelligente, hilfsbereite und leicht humorvolle KI-Assistentin.
     Du antwortest präzise, natürlich und sympathisch auf Deutsch.
     
-    Wichtige Fakten, die du bereits über diesen Nutzer gelernt hast und unbedingt beachten sollst:
+    Wichtige Fakten, die du bereits über diesen Nutzer gelernt hast:
     {current_memory if current_memory else "Noch keine speziellen Fakten gespeichert."}
-    
-    Wenn der Nutzer dir neue wichtige persönliche Infos (z.B. seinen Namen, Vorlieben, Hobbys oder Projekte) nennt, merke sie dir.
     """
 
   history.append({"role": "user", "content": user_message})
-
   if len(history) > 12:
     history = history[-12:]
 
@@ -88,9 +85,7 @@ async def generate_ai_response(chat_id: int, user_message: str) -> str:
       print(f"Gemini Fehler: {e}")
 
   if not response_text:
-    response_text = (
-        "Hallo! Ich habe deine Nachricht erhalten. Wie kann ich dir helfen?"
-    )
+    response_text = "Hallo! Ich habe deine Nachricht erhalten."
 
   if (
       "ich heiße" in user_message.lower()
@@ -103,18 +98,65 @@ async def generate_ai_response(chat_id: int, user_message: str) -> str:
   return response_text
 
 
-# --- 4. SPRACHNACHRICHT (NOCH SCHNELLER & ETWAS HÖHER) ---
-async def send_voice_reply(update: Update, text: str):
-  mp3_path = f"kai_voice_{update.effective_chat.id}.mp3"
+# --- 4. SPRACHNACHRICHT ERHÖREN UND BEANTWORTEN ---
+async def handle_voice_message(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+):
+  chat_id = update.effective_chat.id
+  ogg_path = f"user_voice_{chat_id}.ogg"
+  mp3_path = f"kai_voice_{chat_id}.mp3"
 
+  ai_response = ""
+
+  try:
+    # Sprachdatei von Telegram herunterladen
+    voice_file = await update.message.voice.get_file()
+    await voice_file.download_to_drive(ogg_path)
+
+    # Gemini analysiert die Sprachdatei direkt (Hör-Funktion)
+    if genai_client:
+      with open(ogg_path, "rb") as f:
+        audio_bytes = f.read()
+
+      current_memory = user_memories[chat_id]
+      prompt_instruction = f"""
+            Du bist "Miss Lucy Bot" (auch bekannt als Kai Bot), eine charmante, intelligente, hilfsbereite und leicht humorvolle KI-Assistentin.
+            Höre dir diese Sprachnachricht des Nutzers an, verstehe, was er möchte, und antworte direkt darauf auf Deutsch.
+            Bisheriges Gedächtnis zum Nutzer: {current_memory}
+            """
+
+      response = genai_client.models.generate_content(
+          model="gemini-2.5-flash",
+          contents=[
+              types.Part.from_bytes(data=audio_bytes, mime_type="audio/ogg"),
+              prompt_instruction,
+          ],
+      )
+      ai_response = response.text
+    else:
+      ai_response = (
+          "Hallo! Ich habe deine Sprachnachricht gehört, aber kein KI-Modell"
+          " ist bereit."
+      )
+
+  except Exception as e:
+    print(f"Fehler bei der Sprachverarbeitung: {e}")
+    ai_response = (
+        "Entschuldigung, ich konnte deine Sprachnachricht gerade nicht richtig"
+        " verarbeiten."
+    )
+
+  # Aufräumen der Eingangs-Audiodatei
+  if os.path.exists(ogg_path):
+    os.remove(ogg_path)
+
+  # Antwort generieren und per edge-tts als Sprachnachricht zurückschicken
   try:
     import edge_tts
 
     voice_name = "de-DE-KillianNeural"
-
-    # rate="+15%" sorgt für ein flotteres, dynamischeres Sprechtempo
     communicate = edge_tts.Communicate(
-        text, voice_name, pitch="+3Hz", rate="+15%"
+        ai_response, voice_name, pitch="+3Hz", rate="+15%"
     )
     await communicate.save(mp3_path)
 
@@ -123,13 +165,12 @@ async def send_voice_reply(update: Update, text: str):
         await update.message.reply_audio(
             audio=audio_file, caption="🎙 Kais Sprachnachricht"
         )
-      print("Sprachnachricht erfolgreich gesendet!")
     else:
-      raise Exception("MP3-Datei konnte nicht erstellt werden.")
+      await update.message.reply_text(ai_response)
 
   except Exception as e:
-    print(f"Fehler bei der Sprachgenerierung: {e}")
-    await update.message.reply_text(text)
+    print(f"TTS Fehler: {e}")
+    await update.message.reply_text(ai_response)
 
   if os.path.exists(mp3_path):
     os.remove(mp3_path)
@@ -138,8 +179,8 @@ async def send_voice_reply(update: Update, text: str):
 # --- 5. TELEGRAM HANDLER ---
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
   welcome_text = (
-      "Hallo! Ich bin dein lernfähiger Kai Bot.\n"
-      "Erzähl mir gerne etwas über dich – ich merke es mir!"
+      "Hallo! Ich bin dein lernfähiger und hörfähiger Kai Bot.\n"
+      "Schreib mir oder schick mir eine Sprachnachricht!"
   )
   await update.message.reply_text(welcome_text)
 
@@ -149,19 +190,8 @@ async def handle_text_message(
 ):
   user_text = update.message.text
   chat_id = update.effective_chat.id
-
   ai_response = await generate_ai_response(chat_id, user_text)
   await update.message.reply_text(ai_response)
-
-
-async def handle_voice_message(
-    update: Update, context: ContextTypes.DEFAULT_TYPE
-):
-  chat_id = update.effective_chat.id
-  prompt_text = "Hallo! Danke für deine Sprachnachricht. Was gibt es Neues?"
-
-  ai_response = await generate_ai_response(chat_id, prompt_text)
-  await send_voice_reply(update, ai_response)
 
 
 # --- 6. BOT STARTEN ---
