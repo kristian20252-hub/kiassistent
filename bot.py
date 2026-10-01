@@ -29,6 +29,7 @@ from telegram.ext import (
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+HF_TOKEN = os.getenv("HF_TOKEN")
 
 # KI-Clients initialisieren
 groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
@@ -65,13 +66,11 @@ async def generate_ai_response(chat_id: int, user_message: str) -> str:
   history = chat_histories[chat_id]
   history.append({"role": "user", "content": user_message})
 
-  # Max. die letzten 10 Nachrichten als Kontext behalten
   if len(history) > 10:
     history = history[-10:]
 
   response_text = ""
 
-  # Primär: Groq (Llama 3)
   if groq_client:
     try:
       messages = [{"role": "system", "content": SYSTEM_PROMPT}] + history
@@ -84,7 +83,6 @@ async def generate_ai_response(chat_id: int, user_message: str) -> str:
     except Exception as e:
       print(f"Groq Fehler: {e}")
 
-  # Fallback: Google Gemini
   if not response_text and genai_client:
     try:
       response = genai_client.models.generate_content(
@@ -101,18 +99,18 @@ async def generate_ai_response(chat_id: int, user_message: str) -> str:
   return response_text
 
 
-# --- 5. SPRACHNACHRICHT GEKLONT MIT DEINER STIMME ---
+# --- 5. SPRACHNACHRICHT GEKLONT MIT DEINER STIMME (MIT HF_TOKEN) ---
 async def send_voice_reply(update: Update, text: str):
   mp3_path = f"kai_voice_{update.effective_chat.id}.mp3"
 
   try:
-    # Aufruf der kostenlosen XTTS-v2 KI via Gradio
-    client = Client("coqui/xtts")
+    # Authentifizierter Client über deinen Hugging Face Token
+    client = Client("tts-ms/XTTS-v2", hf_token=HF_TOKEN)
 
     result = client.predict(
         prompt=text,
         language="de",
-        audio_file_pth=handle_file("meine_stimme.mp3"),  # Deine MP3-Referenz!
+        audio_file_pth=handle_file("meine_stimme.mp3"),
         mic_file_path=None,
         use_mic=False,
         voice_cleanup=True,
@@ -132,16 +130,13 @@ async def send_voice_reply(update: Update, text: str):
       )
 
   except Exception as e:
-    print(
-        f"Fehler beim Voice Cloning, automatisches Fallback auf Edge-TTS: {e}"
-    )
-    # Fallback auf normale KI-Stimme, falls das Voice-Cloning-Modell besetzt ist
+    print(f"❌ Voice Cloning Fehler: {e}")
     try:
       communicate = edge_tts.Communicate(text, "de-DE-ConradNeural")
       await communicate.save(mp3_path)
       with open(mp3_path, "rb") as audio_file:
         await update.message.reply_audio(
-            audio=audio_file, caption="🎙 Kais Stimme (Standard)"
+            audio=audio_file, caption="🎙 Kais Stimme (Standard-Fallback)"
         )
     except Exception as fallback_err:
       print(f"Fallback-Fehler: {fallback_err}")
@@ -156,7 +151,7 @@ async def send_voice_reply(update: Update, text: str):
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
   welcome_text = (
       "Hallo! Ich bin dein Kai Bot (Miss Lucy Persona).\n"
-      "Ich kann dir als Text oder per Sprachnachricht in deiner eigenen geklonten Stimme antworten!"
+      "Ich antworte dir jetzt mit deiner eigenen geklonten Stimme!"
   )
   await update.message.reply_text(welcome_text)
 
@@ -167,32 +162,24 @@ async def handle_text_message(
   user_text = update.message.text
   chat_id = update.effective_chat.id
 
-  # KI-Antwort generieren
   ai_response = await generate_ai_response(chat_id, user_text)
-
-  # Antwort per Text senden
   await update.message.reply_text(ai_response)
-
-  # Antwort zusätzlich als Sprachnachricht mit DEINER Stimme senden
   await send_voice_reply(update, ai_response)
 
 
 async def handle_voice_message(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ):
-  # Hinweis auf empfangene Sprachnachricht
   chat_id = update.effective_chat.id
   ai_response = await generate_ai_response(
       chat_id, "Der Nutzer hat dir eine Sprachnachricht geschickt."
   )
-
   await update.message.reply_text(ai_response)
   await send_voice_reply(update, ai_response)
 
 
 # --- 7. BOT STARTEN ---
 def main():
-  # Flask im Hintergrund-Thread starten
   Thread(target=run_flask, daemon=True).start()
 
   if not TELEGRAM_TOKEN:
@@ -201,7 +188,6 @@ def main():
 
   app_bot = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
 
-  # Command & Message Handler registrieren
   app_bot.add_handler(CommandHandler("start", start_command))
   app_bot.add_handler(
       MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message)
