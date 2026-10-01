@@ -13,7 +13,7 @@ LUCY_TOKEN = os.getenv("LUCY_TELEGRAM_TOKEN")
 client = Groq(api_key=GROQ_API_KEY)
 
 active_lucy_chats = {}
-TIMEOUT_SECONDS = 300  # 5 Minuten Inaktivität
+TIMEOUT_SECONDS = 300
 
 async def handle_lucy_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
@@ -66,13 +66,14 @@ async def handle_lucy_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text(reply)
     except Exception as e:
         logging.error(f"Fehler bei Miss Lucy: {e}")
-        await update.message.reply_text("Oh, Schatz, da ist mir gerade ein Missgeschick passiert...")
+        # Auch hier den echten Fehler ausgeben
+        await update.message.reply_text(f"Groq-Fehler: {str(e)}")
 
 def main():
     app = ApplicationBuilder().token(LUCY_TOKEN).build()
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_lucy_message))
     
-    print("Miss Lucy Bot läuft mit Konversations-Gedächtnis...")
+    print("Miss Lucy Bot läuft...")
     app.run_polling()
 
 if __name__ == "__main__":
