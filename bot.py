@@ -36,7 +36,7 @@ app = Flask(__name__)
 
 @app.route("/")
 def home():
-  return "Kai Bot (Perfekt & Schnell) ist online und läuft!"
+  return "Kai Bot (Ultimativ) ist online und läuft!"
 
 
 def run_flask():
@@ -44,7 +44,7 @@ def run_flask():
   app.run(host="0.0.0.0", port=port)
 
 
-# --- 3. TEXT-GENERIERUNG FÜR CHAT & GEDÄCHTNIS ---
+# --- 3. INTELLIGENTE TEXT-GENERIERUNG ---
 async def generate_ai_response(chat_id: int, user_message: str) -> str:
   history = chat_histories[chat_id]
   current_memory = user_memories[chat_id]
@@ -63,6 +63,7 @@ async def generate_ai_response(chat_id: int, user_message: str) -> str:
 
   response_text = ""
 
+  # Versuch 1: Groq (Llama 3.3)
   if groq_client:
     try:
       messages = [{"role": "system", "content": system_prompt}] + history
@@ -75,25 +76,27 @@ async def generate_ai_response(chat_id: int, user_message: str) -> str:
     except Exception as e:
       print(f"Groq Fehler: {e}")
 
+  # Versuch 2: Gemini als Fallback
   if not response_text and genai_client:
     try:
       response = genai_client.models.generate_content(
-          model="gemini-2.5-flash", contents=user_message
+          model="gemini-2.5-flash",
+          contents=f"{system_prompt}\nNutzer: {user_message}",
       )
       response_text = response.text
     except Exception as e:
       print(f"Gemini Fehler: {e}")
 
-  # Echte KI-Antwort statt bloßem Wiederholen
+  # Falls absolut gar nichts klappt, gib eine echte Antwort statt des Nutzersatzes
   if not response_text:
     response_text = (
-        "Das habe ich verstanden! Wie kann ich dir dazu weiterhelfen?"
+        "Das ist eine interessante Frage! Lass mich kurz überlegen..."
     )
 
-  if (
-      "ich heiße" in user_message.lower()
-      or "mein name ist" in user_message.lower()
-      or "ich mag" in user_message.lower()
+  # Gedächtnis aktualisieren
+  if any(
+      k in user_message.lower()
+      for k in ["ich heiße", "mein name ist", "ich mag", "ich liebe"]
   ):
     user_memories[chat_id] += f"- {user_message}\n"
 
@@ -101,7 +104,7 @@ async def generate_ai_response(chat_id: int, user_message: str) -> str:
   return response_text
 
 
-# --- 4. SPRACHNACHRICHT TRANSKRIBIEREN & BEANTWORTEN ---
+# --- 4. SPRACHNACHRICHT VERARBEITEN ---
 async def handle_voice_message(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ):
@@ -114,7 +117,7 @@ async def handle_voice_message(
     voice_file = await update.message.voice.get_file()
     await voice_file.download_to_drive(ogg_path)
 
-    # Über Groq Whisper transkribieren
+    # Über Whisper transkribieren
     if groq_client:
       with open(ogg_path, "rb") as audio_file:
         transcription = groq_client.audio.transcriptions.create(
@@ -124,35 +127,25 @@ async def handle_voice_message(
         )
         transcribed_text = transcription.text
 
-    # Fallback auf Gemini Audio, falls Whisper leer bleibt
-    if not transcribed_text and genai_client:
-      with open(ogg_path, "rb") as f:
-        audio_bytes = f.read()
-      response = genai_client.models.generate_content(
-          model="gemini-2.5-flash",
-          contents=[
-              types.Part.from_bytes(data=audio_bytes, mime_type="audio/ogg"),
-              (
-                  "Transkribiere diese Sprachnachricht exakt ins Deutsche und"
-                  " gib nur den Text aus."
-              ),
-          ],
-      )
-      transcribed_text = response.text
-
-    print(f"Erkannter Text: {transcribed_text}")
+    print(f"Erkannter Text via Whisper: {transcribed_text}")
 
   except Exception as e:
-    print(f"Fehler bei der Spracherkennung: {e}")
-    transcribed_text = "Hallo! Ich konnte deine Nachricht leider nicht hören."
+    print(f"Whisper Fehler: {e}")
 
   if os.path.exists(ogg_path):
     os.remove(ogg_path)
 
-  # Intelligente Antwort von der KI generieren lassen
+  # Falls Whisper nichts erkannt hat
+  if not transcribed_text.strip():
+    transcribed_text = (
+        "Hallo! Ich konnte deine Sprachnachricht leider nicht ganz verstehen,"
+        " erzähl mir gerne noch mal."
+    )
+
+  # Antwort von der KI holen
   ai_response = await generate_ai_response(chat_id, transcribed_text)
 
-  # Als Sprachnachricht ausgeben
+  # Als Sprachnachricht senden
   try:
     import edge_tts
 
@@ -182,7 +175,7 @@ async def handle_voice_message(
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
   welcome_text = (
       "Hallo! Ich bin dein lernfähiger Kai Bot.\n"
-      "Schick mir Text oder Sprachnachrichten – ich antworte dir direkt!"
+      "Schick mir Text oder Sprachnachrichten – ich bin bereit!"
   )
   await update.message.reply_text(welcome_text)
 
