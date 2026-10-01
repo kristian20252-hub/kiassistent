@@ -87,7 +87,6 @@ async def generate_ai_response(chat_id: int, user_message: str) -> str:
     except Exception as e:
       print(f"Gemini Fehler: {e}")
 
-  # Falls absolut gar nichts klappt, gib eine echte Antwort statt des Nutzersatzes
   if not response_text:
     response_text = (
         "Das ist eine interessante Frage! Lass mich kurz überlegen..."
@@ -135,17 +134,14 @@ async def handle_voice_message(
   if os.path.exists(ogg_path):
     os.remove(ogg_path)
 
-  # Falls Whisper nichts erkannt hat
   if not transcribed_text.strip():
     transcribed_text = (
         "Hallo! Ich konnte deine Sprachnachricht leider nicht ganz verstehen,"
         " erzähl mir gerne noch mal."
     )
 
-  # Antwort von der KI holen
   ai_response = await generate_ai_response(chat_id, transcribed_text)
 
-  # Als Sprachnachricht senden
   try:
     import edge_tts
 
