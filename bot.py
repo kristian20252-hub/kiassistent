@@ -99,38 +99,49 @@ async def generate_ai_response(chat_id: int, user_message: str) -> str:
   return response_text
 
 
-# --- 5. SPRACHNACHRICHT GEKLONT MIT DEINER STIMME (MIT HF_TOKEN) ---
+# --- 5. SPRACHNACHRICHT GEKLONT MIT DEINER STIMME (MULTI-SPACE RETRY) ---
 async def send_voice_reply(update: Update, text: str):
   mp3_path = f"kai_voice_{update.effective_chat.id}.mp3"
+  voice_generated = False
 
-  try:
-    # Authentifizierter Client über deinen Hugging Face Token
-    client = Client("tts-ms/XTTS-v2", hf_token=HF_TOKEN)
+  # Liste von verfügbaren XTTS-v2 Spaces auf Hugging Face
+  spaces_to_try = ["tts-ms/XTTS-v2", "coqui/XTTS-v2", "FFR/XTTS-v2"]
 
-    result = client.predict(
-        prompt=text,
-        language="de",
-        audio_file_pth=handle_file("meine_stimme.mp3"),
-        mic_file_path=None,
-        use_mic=False,
-        voice_cleanup=True,
-        no_lang_auto_detect=False,
-        agree=True,
-        api_name="/predict",
-    )
+  for space_name in spaces_to_try:
+    try:
+      print(f"Versuche Voice Cloning über Space: {space_name}")
+      client = Client(space_name, hf_token=HF_TOKEN)
 
-    voice_output_path = result[1] if isinstance(result, tuple) else result
-
-    with open(voice_output_path, "rb") as audio_file:
-      await update.message.reply_audio(
-          audio=audio_file,
-          title="Kais Sprachnachricht",
-          performer="Kai Bot",
-          caption="🎙 Kais Stimme (Geklont)",
+      result = client.predict(
+          prompt=text,
+          language="de",
+          audio_file_pth=handle_file("meine_stimme.mp3"),
+          mic_file_path=None,
+          use_mic=False,
+          voice_cleanup=True,
+          no_lang_auto_detect=False,
+          agree=True,
+          api_name="/predict",
       )
 
-  except Exception as e:
-    print(f"❌ Voice Cloning Fehler: {e}")
+      voice_output_path = result[1] if isinstance(result, tuple) else result
+
+      with open(voice_output_path, "rb") as audio_file:
+        await update.message.reply_audio(
+            audio=audio_file,
+            title="Kais Sprachnachricht",
+            performer="Kai Bot",
+            caption="🎙 Kais Stimme (Geklont)",
+        )
+      voice_generated = True
+      break  # Erfolg! Schleife beenden
+
+    except Exception as e:
+      print(f"❌ Fehler bei Space '{space_name}': {e}")
+
+  # Fallback auf Standard-Stimme, falls alle HF-Spaces fehlschlagen
+  if not voice_generated:
+    print("⚠️ Generiere Standard-Stimme als Fallback...")
     try:
       communicate = edge_tts.Communicate(text, "de-DE-ConradNeural")
       await communicate.save(mp3_path)
@@ -142,9 +153,8 @@ async def send_voice_reply(update: Update, text: str):
       print(f"Fallback-Fehler: {fallback_err}")
       await update.message.reply_text(text)
 
-  finally:
-    if os.path.exists(mp3_path):
-      os.remove(mp3_path)
+  if os.path.exists(mp3_path):
+    os.remove(mp3_path)
 
 
 # --- 6. TELEGRAM HANDLER ---
