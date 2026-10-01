@@ -30,13 +30,13 @@ genai_client = (
 chat_histories = defaultdict(list)
 user_memories = defaultdict(str)
 
-# --- 2. FLASK WEB SERVER (HÄLT DEN BOT AUF RENDER WACH) ---
+# --- 2. FLASK WEB SERVER ---
 app = Flask(__name__)
 
 
 @app.route("/")
 def home():
-  return "Kai Bot (Ultimativ) ist online und läuft!"
+  return "Kai Bot ist online!"
 
 
 def run_flask():
@@ -44,62 +44,56 @@ def run_flask():
   app.run(host="0.0.0.0", port=port)
 
 
-# --- 3. INTELLIGENTE TEXT-GENERIERUNG ---
+# --- 3. DIREKTE UND STABILE TEXT-GENERIERUNG ---
 async def generate_ai_response(chat_id: int, user_message: str) -> str:
-  history = chat_histories[chat_id]
   current_memory = user_memories[chat_id]
 
   system_prompt = f"""
-    Du bist "Miss Lucy Bot" (auch bekannt als Kai Bot), eine charmante, intelligente, hilfsbereite und leicht humorvolle KI-Assistentin.
-    Du antwortest präzise, natürlich und sympathisch auf Deutsch.
-    
-    Wichtige Fakten, die du bereits über diesen Nutzer gelernt hast:
-    {current_memory if current_memory else "Noch keine speziellen Fakten gespeichert."}
+    Du bist "Miss Lucy Bot" (auch bekannt als Kai Bot), eine charmante, intelligente, hilfsbereite KI-Assistentin.
+    Antworte natürlich, kurz und sympathisch auf Deutsch.
+    Gedächtnis zum Nutzer: {current_memory if current_memory else "Keine"}
     """
-
-  history.append({"role": "user", "content": user_message})
-  if len(history) > 12:
-    history = history[-12:]
 
   response_text = ""
 
-  # Versuch 1: Groq (Llama 3.3)
-  if groq_client:
+  # Wir nutzen Gemini direkt als Haupt-Engine, da es extrem stabil über das neue SDK läuft
+  if genai_client:
     try:
-      messages = [{"role": "system", "content": system_prompt}] + history
+      full_prompt = f"{system_prompt}\n\nNutzer sagt: {user_message}"
+      response = genai_client.models.generate_content(
+          model="gemini-1.5-flash", contents=full_prompt
+      )
+      response_text = response.text
+    except Exception as e:
+      print(f"Gemini Fehler: {e}")
+
+  # Falls Gemini hakt, versuchen wir Groq als Backup
+  if not response_text and groq_client:
+    try:
       completion = groq_client.chat.completions.create(
-          model="llama-3.3-70b-versatile",
-          messages=messages,
+          model="llama-3.1-70b-versatile",
+          messages=[
+              {"role": "system", "content": system_prompt},
+              {"role": "user", "content": user_message},
+          ],
           temperature=0.7,
       )
       response_text = completion.choices[0].message.content
     except Exception as e:
       print(f"Groq Fehler: {e}")
 
-  # Versuch 2: Gemini als Fallback
-  if not response_text and genai_client:
-    try:
-      response = genai_client.models.generate_content(
-          model="gemini-2.5-flash",
-          contents=f"{system_prompt}\nNutzer: {user_message}",
-      )
-      response_text = response.text
-    except Exception as e:
-      print(f"Gemini Fehler: {e}")
-
   if not response_text:
     response_text = (
-        "Das ist eine interessante Frage! Lass mich kurz überlegen..."
+        f"Hallo! Du hast gesagt: '{user_message}'. Wie kann ich dir helfen?"
     )
 
-  # Gedächtnis aktualisieren
+  # Merken von Infos
   if any(
       k in user_message.lower()
-      for k in ["ich heiße", "mein name ist", "ich mag", "ich liebe"]
+      for k in ["ich heiße", "mein name ist", "ich mag"]
   ):
     user_memories[chat_id] += f"- {user_message}\n"
 
-  history.append({"role": "assistant", "content": response_text})
   return response_text
 
 
@@ -116,7 +110,6 @@ async def handle_voice_message(
     voice_file = await update.message.voice.get_file()
     await voice_file.download_to_drive(ogg_path)
 
-    # Über Whisper transkribieren
     if groq_client:
       with open(ogg_path, "rb") as audio_file:
         transcription = groq_client.audio.transcriptions.create(
@@ -125,9 +118,6 @@ async def handle_voice_message(
             language="de",
         )
         transcribed_text = transcription.text
-
-    print(f"Erkannter Text via Whisper: {transcribed_text}")
-
   except Exception as e:
     print(f"Whisper Fehler: {e}")
 
@@ -135,10 +125,7 @@ async def handle_voice_message(
     os.remove(ogg_path)
 
   if not transcribed_text.strip():
-    transcribed_text = (
-        "Hallo! Ich konnte deine Sprachnachricht leider nicht ganz verstehen,"
-        " erzähl mir gerne noch mal."
-    )
+    transcribed_text = "Hallo"
 
   ai_response = await generate_ai_response(chat_id, transcribed_text)
 
@@ -158,7 +145,6 @@ async def handle_voice_message(
         )
     else:
       await update.message.reply_text(ai_response)
-
   except Exception as e:
     print(f"TTS Fehler: {e}")
     await update.message.reply_text(ai_response)
@@ -167,13 +153,11 @@ async def handle_voice_message(
     os.remove(mp3_path)
 
 
-# --- 5. TELEGRAM HANDLER ---
+# --- 5. HANDLER ---
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-  welcome_text = (
-      "Hallo! Ich bin dein lernfähiger Kai Bot.\n"
-      "Schick mir Text oder Sprachnachrichten – ich bin bereit!"
+  await update.message.reply_text(
+      "Hallo! Ich bin dein Kai Bot. Schreib mir oder sprich mit mir!"
   )
-  await update.message.reply_text(welcome_text)
 
 
 async def handle_text_message(
@@ -185,7 +169,7 @@ async def handle_text_message(
   await update.message.reply_text(ai_response)
 
 
-# --- 6. BOT STARTEN ---
+# --- 6. START ---
 def main():
   Thread(target=run_flask, daemon=True).start()
 
@@ -194,7 +178,6 @@ def main():
     return
 
   app_bot = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
-
   app_bot.add_handler(CommandHandler("start", start_command))
   app_bot.add_handler(
       MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message)
