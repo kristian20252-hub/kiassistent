@@ -100,22 +100,23 @@ async def generate_ai_response(chat_id: int, user_message: str) -> str:
   return response_text
 
 
-# --- 5. SPRACHNACHRICHT MIT DEINER STIMME (ERWEITERTE QUELLEN) ---
+# --- 5. SPRACHNACHRICHT MIT DEINER ECHTEN STIMME (LOKALE DATEI) ---
 async def send_voice_reply(update: Update, text: str):
   mp3_path = f"kai_voice_{update.effective_chat.id}.mp3"
   voice_generated = False
 
-  # Wir erweitern die Liste um aktive Spaces und Alternativ-Endpoints
+  # Wir nutzen alternative öffentliche XTTS-Instanzen, die deine lokale 'meine_stimme.mp3' einlesen
   public_spaces = [
+      "daswer1/XTTS-v2",
+      "syntheticai/XTTS-v2",
       "coqui/XTTS-v2",
-      "KittenTris/XTTS-v2",
-      "nitsangannot/XTTS-v2",
   ]
 
   for space_name in public_spaces:
     try:
       print(
-          f"Versuche Stimmklon-Generierung über Space: {space_name}..."
+          f"Versuche Stimmklon über Space '{space_name}' mit"
+          " 'meine_stimme.mp3'..."
       )
       client = Client(space_name, hf_token=HF_TOKEN)
 
@@ -138,27 +139,25 @@ async def send_voice_reply(update: Update, text: str):
             audio=audio_file,
             title="Kais Sprachnachricht",
             performer="Kai Bot",
-            caption="🎙 Deine echte geklonte Stimme",
+            caption="🎙 Deine geklonte Stimme",
         )
       voice_generated = True
-      print("Erfolgreich mit echter Stimme geantwortet!")
+      print("Erfolgreich mit deiner echten Stimme geantwortet!")
       break
     except Exception as e:
-      print(f"⚠ Konnte Space {space_name} nicht nutzen: {e}")
+      print(f"⚠ Space {space_name} fehlgeschlagen: {e}")
 
-  # Wenn alle Spaces blockiert sind, nutzen wir einen optimierten Edge-TTS Klon-Modus
+  # Notfall-Fallback, falls alle alternativen Server unerreichbar sind
   if not voice_generated:
     print(
-        "⚠️ Externe Spaces aktuell ausgelastet – verwende optimierte"
-        " Sprachausgabe..."
+        "⚠️ Alle Klone-Server blockiert. Verwende temporär Standard-Stimme..."
     )
     try:
-      # Wir nutzen eine besonders warme, menschliche Microsoft-Stimme als Basis
       communicate = edge_tts.Communicate(text, "de-DE-KillianNeural")
       await communicate.save(mp3_path)
       with open(mp3_path, "rb") as audio_file:
         await update.message.reply_audio(
-            audio=audio_file, caption="🎙 Kais Stimme"
+            audio=audio_file, caption="🎙 Kais Stimme (Fallback)"
         )
     except Exception as fallback_err:
       print(f"Fallback-Fehler: {fallback_err}")
@@ -172,8 +171,8 @@ async def send_voice_reply(update: Update, text: str):
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
   welcome_text = (
       "Hallo! Ich bin dein Kai Bot.\n"
-      "• Textnachricht ➔ Ich antworte per Text.\n"
-      "• Sprachnachricht ➔ Ich antworte mit deiner Stimme!"
+      "• Text ➔ Text-Antwort\n"
+      "• Sprachnachricht ➔ Antwort in deiner echten Stimme!"
   )
   await update.message.reply_text(welcome_text)
 
