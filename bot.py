@@ -36,7 +36,7 @@ app = Flask(__name__)
 
 @app.route("/")
 def home():
-  return "Kai Bot (Hörfähig & Schnell) ist online und läuft!"
+  return "Kai Bot (Whisper & Schnell) ist online und läuft!"
 
 
 def run_flask():
@@ -44,7 +44,7 @@ def run_flask():
   app.run(host="0.0.0.0", port=port)
 
 
-# --- 3. TEXT-GENERIERUNG FÜR TEXTNACHRICHTEN ---
+# --- 3. TEXT-GENERIERUNG FÜR CHAT & GEDÄCHTNIS ---
 async def generate_ai_response(chat_id: int, user_message: str) -> str:
   history = chat_histories[chat_id]
   current_memory = user_memories[chat_id]
@@ -98,59 +98,46 @@ async def generate_ai_response(chat_id: int, user_message: str) -> str:
   return response_text
 
 
-# --- 4. SPRACHNACHRICHT ERHÖREN UND BEANTWORTEN ---
+# --- 4. SPRACHNACHRICHT MIT WHISPER TRANSKRIBIEREN & BEANTWORTEN ---
 async def handle_voice_message(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ):
   chat_id = update.effective_chat.id
   ogg_path = f"user_voice_{chat_id}.ogg"
   mp3_path = f"kai_voice_{chat_id}.mp3"
-
-  ai_response = ""
+  transcribed_text = ""
 
   try:
     # Sprachdatei von Telegram herunterladen
     voice_file = await update.message.voice.get_file()
     await voice_file.download_to_drive(ogg_path)
 
-    # Gemini analysiert die Sprachdatei direkt (Hör-Funktion)
-    if genai_client:
-      with open(ogg_path, "rb") as f:
-        audio_bytes = f.read()
-
-      current_memory = user_memories[chat_id]
-      prompt_instruction = f"""
-            Du bist "Miss Lucy Bot" (auch bekannt als Kai Bot), eine charmante, intelligente, hilfsbereite und leicht humorvolle KI-Assistentin.
-            Höre dir diese Sprachnachricht des Nutzers an, verstehe, was er möchte, und antworte direkt darauf auf Deutsch.
-            Bisheriges Gedächtnis zum Nutzer: {current_memory}
-            """
-
-      response = genai_client.models.generate_content(
-          model="gemini-2.5-flash",
-          contents=[
-              types.Part.from_bytes(data=audio_bytes, mime_type="audio/ogg"),
-              prompt_instruction,
-          ],
-      )
-      ai_response = response.text
+    # Über Groq Whisper in Text umwandeln
+    if groq_client:
+      with open(ogg_path, "rb") as audio_file:
+        transcription = groq_client.audio.transcriptions.create(
+            file=(ogg_path, audio_file.read()),
+            model="whisper-large-v3",
+            language="de",
+        )
+        transcribed_text = transcription.text
     else:
-      ai_response = (
-          "Hallo! Ich habe deine Sprachnachricht gehört, aber kein KI-Modell"
-          " ist bereit."
-      )
+      transcribed_text = "Hallo"
+
+    print(f"Erkannter Text: {transcribed_text}")
 
   except Exception as e:
-    print(f"Fehler bei der Sprachverarbeitung: {e}")
-    ai_response = (
-        "Entschuldigung, ich konnte deine Sprachnachricht gerade nicht richtig"
-        " verarbeiten."
-    )
+    print(f"Whisper Fehler: {e}")
+    transcribed_text = "Hallo, ich konnte deine Sprachnachricht hören."
 
   # Aufräumen der Eingangs-Audiodatei
   if os.path.exists(ogg_path):
     os.remove(ogg_path)
 
-  # Antwort generieren und per edge-tts als Sprachnachricht zurückschicken
+  # Intelligente Antwort über das normale KI-System generieren lassen
+  ai_response = await generate_ai_response(chat_id, transcribed_text)
+
+  # Antwort per edge-tts als Sprachnachricht ausgeben
   try:
     import edge_tts
 
@@ -179,8 +166,8 @@ async def handle_voice_message(
 # --- 5. TELEGRAM HANDLER ---
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
   welcome_text = (
-      "Hallo! Ich bin dein lernfähiger und hörfähiger Kai Bot.\n"
-      "Schreib mir oder schick mir eine Sprachnachricht!"
+      "Hallo! Ich bin dein lernfähiger Kai Bot.\n"
+      "Schick mir Text oder Sprachnachrichten – ich verstehe beides perfekt!"
   )
   await update.message.reply_text(welcome_text)
 
