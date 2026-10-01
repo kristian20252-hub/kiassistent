@@ -1,10 +1,9 @@
-from collections import defaultdict
 import io
 import os
 import re
-from threading import Thread
+from collections import defaultdict
 import urllib.parse
-from elevenlabs import ElevenLabs
+import edge_tts
 from flask import Flask
 from google import genai
 from google.genai import types
@@ -20,6 +19,7 @@ from telegram.ext import (
     MessageHandler,
     filters,
 )
+from threading import Thread
 
 # --- 1. WEBSERVER FÜR RENDER HEALTH CHECK ---
 flask_app = Flask("")
@@ -45,30 +45,18 @@ def keep_alive():
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-ELEVENLABS_API_KEY = os.environ.get("ELEVENLABS_API_KEY")
 
 groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 gemini_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
-eleven_client = (
-    ElevenLabs(api_key=ELEVENLABS_API_KEY) if ELEVENLABS_API_KEY else None
-)
 
 BASE_SYSTEM_PROMPT = (
-    "Du bist Kai Bot, ein persönlicher KI-Assistent mit einer angenehmen"
-    " männlichen Stimme. Du bist ein extrem menschlicher, cooler, empathischer"
-    " und natürlicher Gesprächspartner. Du nutzt einen lockeren Ton (gerne"
-    " auch mal Umgangssprache oder Humor). Wenn man dich fragt, ob du eine Frau"
-    " hast, antworte mit Ja, strahle über beide Ohren und schwärme absolut"
-    " davon, dass deine Frau Miss Lucy heißt, die du über alles auf der Welt"
-    " liebst, vergötterst und für die du durchs Feuer gehen würdest! Wenn man"
-    " dich fragt, wer dich erschaffen, erfunden oder erstellt hat, antworte"
-    " genau so: 'Ich bin im Herzen ein Schwäbischer Bot und wurde von Heiko"
-    " vom Schwobenländle erfunden 😊 Heiko ist mein Erschaffer 😊' Antworte"
-    " stets höflich, präzise und auf Deutsch. Das Wichtigste: Du hast ein"
-    " echtes Langzeitgedächtnis über deinen Gesprächspartner. Bringe Dinge,"
-    " die dir früher erzählt wurden, ganz von dir aus und organisch im"
-    " Gespräch zur Sprache – so wie ein echter Mensch, der sich erinnert und"
-    " echtes Interesse zeigt!"
+    "Du bist Kai Bot, ein persönlicher KI-Assistent mit einer angenehmen männlichen Stimme. "
+    "Du bist ein extrem menschlicher, cooler, empathischer und natürlicher Gesprächspartner. Du nutzt einen lockeren Ton (gerne auch mal Umgangssprache oder Humor). "
+    "Wenn man dich fragt, ob du eine Frau hast, antworte mit Ja, strahle über beide Ohren und schwärme absolut davon, dass deine Frau Miss Lucy heißt, die du über alles auf der Welt liebst, vergötterst und für die du durchs Feuer gehen würdest! "
+    "Wenn man dich fragt, wer dich erschaffen, erfunden oder erstellt hat, antworte genau so: "
+    "'Ich bin im Herzen ein Schwäbischer Bot und wurde von Heiko vom Schwobenländle erfunden 😊 Heiko ist mein Erschaffer 😊' "
+    "Antworte stets höflich, präzise und auf Deutsch. "
+    "Das Wichtigste: Du hast ein echtes Langzeitgedächtnis über deinen Gesprächspartner. Bringe Dinge, die dir früher erzählt wurden, ganz von dir aus und organisch im Gespräch zur Sprache – so wie ein echter Mensch, der sich erinnert und echtes Interesse zeigt!"
 )
 
 user_chat_history = defaultdict(list)
@@ -148,7 +136,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
   user_chat_history[chat_id].clear()
   await update.message.reply_text(
       "Hallo! Ich bin Kai Bot.\n\nErfunden von Heiko aus dem"
-      " Schwabenländle! Ich spreche mit meiner ElevenLabs-Stimme und"
+      " Schwabenländle! Ich spreche mit einer angenehmen Männerstimme und"
       " merke mir alles Wichtige über dich.\nSchreib oder sprich mir einfach"
       " eine Nachricht."
   )
@@ -163,32 +151,25 @@ async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
   )
 
 
-# --- HILFSFUNKTION: ELEVENLABS STIMME ---
+# --- HILFSFUNKTION: EDGE-TTS FÜR NATÜRLICHE MÄNNLICHE STIMME ---
 async def send_voice_reply(update: Update, text: str):
-  mp3_path = "kai_eleven_voice.mp3"
-  if not eleven_client:
-    await update.message.reply_text(text)
-    return
-
+  mp3_path = "kai_edge_voice.mp3"
   try:
-    voice_id = "UmJ2mh7wi5v1HlGEX7FW"
-    audio_generator = eleven_client.text_to_speech.convert(
-        voice_id=voice_id,
-        model_id="eleven_multilingual_v2",
-        text=text,
-    )
-
-    with open(mp3_path, "wb") as f:
-      for chunk in audio_generator:
-        f.write(chunk)
+    communicate = edge_tts.Communicate(text, "de-DE-ConradNeural")
+    await communicate.save(mp3_path)
 
     with open(mp3_path, "rb") as audio_file:
-      await update.message.reply_voice(voice=audio_file)
+      await update.message.reply_audio(
+          audio=audio_file,
+          title="Kais Sprachnachricht",
+          performer="Kai Bot",
+          caption="🎙️ Kais Stimme",
+      )
 
     if os.path.exists(mp3_path):
       os.remove(mp3_path)
   except Exception as e:
-    print(f"Fehler bei ElevenLabs: {e}")
+    print(f"Fehler bei Edge-TTS: {e}")
     await update.message.reply_text(text)
 
 
@@ -529,7 +510,7 @@ if __name__ == "__main__":
   bot_app.add_handler(MessageHandler(filters.VIDEO, handle_video))
 
   print(
-      "Kai Bot mit Miss Lucy, ElevenLabs, Langzeitgedächtnis und Menschlichkeit"
+      "Kai Bot mit Miss Lucy, Langzeitgedächtnis und Menschlichkeit"
       " gestartet..."
   )
   bot_app.run_polling()
