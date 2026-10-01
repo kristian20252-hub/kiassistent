@@ -103,27 +103,6 @@ def update_chat_activity(chat_id: int, chat_type: str):
         active_chats[chat_id] = time.time()
 
 
-def get_chat_models():
-    EXCLUDED = ["guard", "whisper", "embed", "vision", "safeguard", "preview"]
-    try:
-        models_page = groq_client.models.list()
-        valid = [
-            m.id
-            for m in models_page.data
-            if hasattr(m, "id")
-            and not any(kw in m.id.lower() for kw in EXCLUDED)
-        ]
-        priority = ["llama-3.1-8b-instant"]
-        sorted_models = [m for m in priority if m in valid]
-        for m in valid:
-            if m not in sorted_models:
-                sorted_models.append(m)
-        return sorted_models
-    except Exception as e:
-        print(f"Fehler bei Groq: {e}")
-        return ["llama-3.1-8b-instant"]
-
-
 def get_gemini_models():
     try:
         models_list = gemini_client.models.list()
@@ -302,19 +281,12 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         messages_payload = [{"role": "system", "content": current_prompt}] + list(
             user_chat_history[chat_id]
         )
-        available_models = get_chat_models()
 
-        reply = None
-        for model in available_models:
-            try:
-                response = groq_client.chat.completions.create(
-                    model=model, messages=messages_payload, temperature=0.8
-                )
-                reply = response.choices[0].message.content
-                if reply:
-                    break
-            except Exception:
-                continue
+        # Fester Modellaufruf ohne dynamische Suche
+        response = groq_client.chat.completions.create(
+            model="llama-3.1-8b-instant", messages=messages_payload, temperature=0.8
+        )
+        reply = response.choices[0].message.content
 
         if reply:
             user_chat_history[chat_id].append(
@@ -384,29 +356,22 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     messages_payload = [{"role": "system", "content": current_prompt}] + list(
         user_chat_history[chat_id]
     )
-    available_models = get_chat_models()
 
-    reply = None
-    last_error = None
+    try:
+        # Fester Modellaufruf ohne Fehlerrisiko
+        response = groq_client.chat.completions.create(
+            model="llama-3.1-8b-instant", messages=messages_payload, temperature=0.8
+        )
+        reply = response.choices[0].message.content
 
-    for model in available_models:
-        try:
-            response = groq_client.chat.completions.create(
-                model=model, messages=messages_payload, temperature=0.8
-            )
-            reply = response.choices[0].message.content
-            if reply:
-                break
-        except Exception as e:
-            last_error = e
-            continue
-
-    if reply:
-        user_chat_history[chat_id].append({"role": "assistant", "content": reply})
-        update_chat_activity(chat_id, chat_type)
-        await update.message.reply_text(reply)
-    else:
-        await update.message.reply_text(f"Fehler: {last_error}")
+        if reply:
+            user_chat_history[chat_id].append({"role": "assistant", "content": reply})
+            update_chat_activity(chat_id, chat_type)
+            await update.message.reply_text(reply)
+        else:
+            await update.message.reply_text("Fehler: Keine Antwort erhalten.")
+    except Exception as e:
+        await update.message.reply_text(f"Fehler: {e}")
 
 
 # --- BILD-BEARBEITUNG: TEXT AUF BILD SCHREIBEN ---
