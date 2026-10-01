@@ -282,11 +282,19 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
             user_chat_history[chat_id]
         )
 
-        # Fester Modellaufruf ohne dynamische Suche
-        response = groq_client.chat.completions.create(
-            model="llama-3.1-8b-instant", messages=messages_payload, temperature=0.8
-        )
-        reply = response.choices[0].message.content
+        # Versuche gängige Groq-Modelle durch
+        models_to_try = ["llama-3.1-70b-versatile", "llama-3.1-8b-instant", "llama3-70b-8192"]
+        reply = None
+        for m in models_to_try:
+            try:
+                response = groq_client.chat.completions.create(
+                    model=m, messages=messages_payload, temperature=0.8
+                )
+                reply = response.choices[0].message.content
+                if reply:
+                    break
+            except Exception:
+                continue
 
         if reply:
             user_chat_history[chat_id].append(
@@ -357,21 +365,28 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_chat_history[chat_id]
     )
 
-    try:
-        # Fester Modellaufruf ohne Fehlerrisiko
-        response = groq_client.chat.completions.create(
-            model="llama-3.1-8b-instant", messages=messages_payload, temperature=0.8
-        )
-        reply = response.choices[0].message.content
+    models_to_try = ["llama-3.1-70b-versatile", "llama-3.1-8b-instant", "llama3-70b-8192"]
+    reply = None
+    last_error = None
 
-        if reply:
-            user_chat_history[chat_id].append({"role": "assistant", "content": reply})
-            update_chat_activity(chat_id, chat_type)
-            await update.message.reply_text(reply)
-        else:
-            await update.message.reply_text("Fehler: Keine Antwort erhalten.")
-    except Exception as e:
-        await update.message.reply_text(f"Fehler: {e}")
+    for m in models_to_try:
+        try:
+            response = groq_client.chat.completions.create(
+                model=m, messages=messages_payload, temperature=0.8
+            )
+            reply = response.choices[0].message.content
+            if reply:
+                break
+        except Exception as e:
+            last_error = e
+            continue
+
+    if reply:
+        user_chat_history[chat_id].append({"role": "assistant", "content": reply})
+        update_chat_activity(chat_id, chat_type)
+        await update.message.reply_text(reply)
+    else:
+        await update.message.reply_text(f"Fehler: {last_error}")
 
 
 # --- BILD-BEARBEITUNG: TEXT AUF BILD SCHREIBEN ---
