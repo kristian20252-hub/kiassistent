@@ -100,18 +100,20 @@ async def generate_ai_response(chat_id: int, user_message: str) -> str:
   return response_text
 
 
-# --- 5. SPRACHNACHRICHT ERZEUGEN (ÖFFENTLICHE HF-SPACES & FALLBACK) ---
+# --- 5. SPRACHNACHRICHT MIT DEINER STIMME ---
 async def send_voice_reply(update: Update, text: str):
   mp3_path = f"kai_voice_{update.effective_chat.id}.mp3"
   voice_generated = False
 
-  # Öffentliche XTTS-v2 Spaces als Multi-Source-Fallback
   public_spaces = ["coqui/XTTS-v2", "tts-ms/XTTS-v2", "FFR/XTTS-v2"]
 
   for space_name in public_spaces:
     try:
-      print(f"Versuche Voice Cloning über HF Space: {space_name}")
+      print(
+          f"Verbinde mit HF Space '{space_name}' (kann beim Aufwachen dauern)..."
+      )
       client = Client(space_name, hf_token=HF_TOKEN)
+
       result = client.predict(
           prompt=text,
           language="de",
@@ -123,6 +125,7 @@ async def send_voice_reply(update: Update, text: str):
           agree=True,
           api_name="/predict",
       )
+
       voice_output_path = result[1] if isinstance(result, tuple) else result
 
       with open(voice_output_path, "rb") as audio_file:
@@ -130,16 +133,16 @@ async def send_voice_reply(update: Update, text: str):
             audio=audio_file,
             title="Kais Sprachnachricht",
             performer="Kai Bot",
-            caption="🎙 Kais Stimme (Geklont)",
+            caption="🎙 Kais geklonte Stimme",
         )
       voice_generated = True
       break
     except Exception as e:
-      print(f"❌ Space {space_name} nicht erreichbar: {e}")
+      print(f"⚠ Fehler bei Space {space_name}: {e}")
 
-  # Fallback auf eine saubere deutsche Standard-Stimme, falls HF blockiert
+  # Fallback auf Standard-Stimme, falls alle Spaces blockiert sind
   if not voice_generated:
-    print("⚠️ Nutzen sauberen Fallback (Edge-TTS)...")
+    print("⚠️ Fallback auf Edge-TTS...")
     try:
       communicate = edge_tts.Communicate(text, "de-DE-ConradNeural")
       await communicate.save(mp3_path)
@@ -159,7 +162,9 @@ async def send_voice_reply(update: Update, text: str):
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
   welcome_text = (
       "Hallo! Ich bin dein Kai Bot.\n"
-      "Ich antworte dir auf deine Text- und Sprachnachrichten!"
+      "Schreibe mir Text -> Ich antworte in Text.\n"
+      "Schicke mir eine Sprachnachricht -> Ich antworte mit deiner geklonten"
+      " Stimme!"
   )
   await update.message.reply_text(welcome_text)
 
@@ -170,9 +175,9 @@ async def handle_text_message(
   user_text = update.message.text
   chat_id = update.effective_chat.id
 
+  # Nur reine Text-Antwort senden
   ai_response = await generate_ai_response(chat_id, user_text)
   await update.message.reply_text(ai_response)
-  await send_voice_reply(update, ai_response)
 
 
 async def handle_voice_message(
@@ -181,8 +186,8 @@ async def handle_voice_message(
   chat_id = update.effective_chat.id
   prompt_text = "Hallo! Danke für deine Sprachnachricht. Wie kann ich dir heute weiterhelfen?"
 
+  # Text generieren und als Sprachnachricht (Voice) antworten
   ai_response = await generate_ai_response(chat_id, prompt_text)
-  await update.message.reply_text(ai_response)
   await send_voice_reply(update, ai_response)
 
 
