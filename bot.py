@@ -171,7 +171,6 @@ async def send_voice_reply(update: Update, text: str):
     return
 
   try:
-    # Hier ist deine neue Voice-ID eingetragen
     voice_id = "UCc0Bm4veTF6rT4jxxqN"
     audio_generator = eleven_client.text_to_speech.convert(
         voice_id=voice_id,
@@ -233,12 +232,11 @@ async def generate_image_command(
     await msg.edit_text("Zeitüberschreitung beim Bild-Server.")
 
 
-# --- SPRACHNACHRICHTEN VERARBEITEN ---
+# --- SPRACHNACHRICHTEN VERARBEITEN (SAUBER & OHNE TEXT-SPAM) ---
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
   chat_id = update.effective_chat.id
-  msg = await update.message.reply_text("Höre mir die Sprachnachricht an...")
-
   voice_file_path = "voice_input.ogg"
+
   try:
     voice = await update.message.voice.get_file()
     await voice.download_to_drive(voice_file_path)
@@ -253,16 +251,12 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user_text = transcript
     if not user_text.strip():
-      await msg.edit_text(
+      await update.message.reply_text(
           "Ich konnte in der Sprachnachricht nichts verstehen."
       )
       return
 
     check_and_learn(chat_id, user_text)
-
-    await msg.edit_text(
-        f"🎤 *Verstanden:* \"{user_text}\"\nGeneriere Sprachantwort..."
-    )
 
     user_chat_history[chat_id].append({"role": "user", "content": user_text})
     if len(user_chat_history[chat_id]) > MAX_HISTORY:
@@ -290,13 +284,14 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
       user_chat_history[chat_id].append(
           {"role": "assistant", "content": reply}
       )
-      await msg.delete()
       await send_voice_reply(update, reply)
     else:
-      await msg.edit_text("Entschuldigung, ich konnte keine Antwort generieren.")
+      await update.message.reply_text(
+          "Entschuldigung, ich konnte keine Antwort generieren."
+      )
 
   except Exception as e:
-    await msg.edit_text(f"Fehler bei der Sprachverarbeitung: {e}")
+    print(f"Fehler bei der Sprachverarbeitung: {e}")
 
   finally:
     if os.path.exists(voice_file_path):
