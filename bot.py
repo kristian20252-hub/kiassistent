@@ -103,7 +103,7 @@ async def generate_ai_response(chat_id: int, user_message: str) -> str:
   return response_text
 
 
-# --- 4. SPRACHNACHRICHT (SCHNELLER & ETWAS HÖHER) ---
+# --- 4. SPRACHNACHRICHT (NOCH SCHNELLER & ETWAS HÖHER) ---
 async def send_voice_reply(update: Update, text: str):
   mp3_path = f"kai_voice_{update.effective_chat.id}.mp3"
 
@@ -112,9 +112,9 @@ async def send_voice_reply(update: Update, text: str):
 
     voice_name = "de-DE-KillianNeural"
 
-    # pitch="+3Hz" macht die Stimme etwas höher, rate="+5%" lässt sie schneller sprechen
+    # rate="+15%" sorgt für ein flotteres, dynamischeres Sprechtempo
     communicate = edge_tts.Communicate(
-        text, voice_name, pitch="+3Hz", rate="+5%"
+        text, voice_name, pitch="+3Hz", rate="+15%"
     )
     await communicate.save(mp3_path)
 
