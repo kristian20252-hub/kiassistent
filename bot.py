@@ -13,7 +13,7 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 client = Groq(api_key=GROQ_API_KEY)
 
 active_chats = {}
-TIMEOUT_SECONDS = 300
+TIMEOUT_SECONDS = 300  # 5 Minuten Inaktivität
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
@@ -45,7 +45,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         completion = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model="llama3-70b-8192",  # Korrigiertes, stabiles Modell
             messages=[
                 {"role": "system", "content": "Du bist Kai, ein hilfsbereiter KI-Assistent."},
                 {"role": "user", "content": message_text}
@@ -60,7 +60,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(reply)
     except Exception as e:
         logging.error(f"Fehler bei Groq: {e}")
-        # Wir geben den echten Fehler aus, damit du siehst, was klemmt!
         await update.message.reply_text(f"Groq-Fehler: {str(e)}")
 
 def main():
