@@ -6,4 +6,4 @@ requests
 pillow
 moviepy==1.0.3
 edge-tts
-git+https://github.com/yt-dlp/yt-dlp.git
+yt-dlp[default] @ git+https://github.com/yt-dlp/yt-dlp.git@master
