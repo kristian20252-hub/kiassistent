@@ -69,9 +69,9 @@ MAX_HISTORY = 10
 
 
 def format_for_telegram(text: str) -> str:
-  """Wandelt Markdown sicher in sauberes HTML für Telegram um
+  """Wandelt Markdown (Rauten und Bindestriche) sicher in sauberes HTML für
 
-  und behält saubere Absätze und Listen bei.
+  Telegram um.
   """
   if not text:
     return ""
@@ -79,7 +79,12 @@ def format_for_telegram(text: str) -> str:
   text = text.replace("```", "")
   text = re.sub(r"^\s*>\s?", "", text, flags=re.MULTILINE)
 
-  # Überschriften mit Bindestrichen darunter in fettes HTML umwandeln
+  # 1. Falls die KI Rauten (#) verwendet, direkt abfangen und umwandeln
+  text = re.sub(
+      r"^\s*#{1,6}\s*(.*?)$", r"\n<b>📌 \1</b>\n", text, flags=re.MULTILINE
+  )
+
+  # 2. Überschriften mit Bindestrichen darunter in fettes HTML umwandeln
   text = re.sub(
       r"^(.*?)\n\s*---+\s*$", r"\n<b>📌 \1</b>\n", text, flags=re.MULTILINE
   )
