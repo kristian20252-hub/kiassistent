@@ -21,6 +21,7 @@ from telegram.ext import (
     filters,
 )
 from threading import Thread
+import yt_dlp
 
 # --- 1. WEBSERVER FÜR RENDER HEALTH CHECK ---
 flask_app = Flask("")
@@ -195,7 +196,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
       "Hallo! Ich bin Kai Bot. 👋\n\nErfunden von Heiko aus dem"
       " Schwabenländle! 🌟 Ich spreche mit einer angenehmen Männerstimme und"
       " merke mir alles Wichtige über dich.\nSchreib oder sprich mir einfach"
-      " eine Nachricht."
+      " eine Nachricht oder schicke einen YouTube/TikTok/X-Link zum"
+      " Downloaden!"
   )
 
 
@@ -369,7 +371,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
       os.remove(voice_file_path)
 
 
-# --- TEXT-CHAT UND INTELLIGENTER STANDBY-MODUS ---
+# --- TEXT-CHAT, STANDBY UND VIDEO-DOWNLOADER ---
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
   chat_id = update.effective_chat.id
   chat_type = update.effective_chat.type
@@ -429,6 +431,46 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
       active_group_chats[chat_id] = now
     elif is_active:
       active_group_chats[chat_id] = now
+
+  # --- VIDEO DOWNLOADER (YouTube, TikTok, X / Twitter) ---
+  video_platforms = ["youtube.com", "youtu.be", "tiktok.com", "twitter.com", "x.com"]
+  if any(platform in lower_text for platform in video_platforms):
+    urls = re.findall(r"(https?://[^\s]+)", user_text)
+    if urls:
+      target_url = urls[0]
+      msg = await update.message.reply_text(
+          "📥 Lade Video herunter (YouTube/TikTok/X)... Bitte einen"
+          " Moment Geduld..."
+      )
+      output_filename = "downloaded_video.mp4"
+      ydl_opts = {
+          "format": "best[ext=mp4]/best",
+          "outtmpl": output_filename,
+          "max_filesize": 50 * 1024 * 1024,  # Telegram Bot Limit (50MB)
+          "noplaylist": True,
+      }
+      try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+          ydl.download([target_url])
+
+        if os.path.exists(output_filename):
+          with open(output_filename, "rb") as vid_file:
+            await update.message.reply_video(
+                video=vid_file,
+                caption="✅ Hier ist dein heruntergeladenes Video!",
+            )
+          await msg.delete()
+        else:
+          await msg.edit_text(
+              "⚠️ Das Video konnte nicht gefunden oder heruntergeladen werden"
+              " (vielleicht zu groß für Telegram)."
+          )
+      except Exception as e:
+        await msg.edit_text(f"❌ Fehler beim Download: {e}")
+      finally:
+        if os.path.exists(output_filename):
+          os.remove(output_filename)
+      return
 
   image_triggers = [
       "erstelle ein bild",
@@ -534,7 +576,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await msg.edit_text(sauberer_text, parse_mode="HTML")
     return
 
-  msg = await update.message.reply_text("✏️ Füge Text auf das Bild ein...")
+  msg = await update.message.reply_text("✏️️ Füge Text auf das Bild ein...")
   photo_file = await update.message.photo[-1].get_file()
   photo_bytes = await photo_file.download_as_bytearray()
 
@@ -611,8 +653,8 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     start_sec = max(0, min(start_sec, clip.duration))
     end_sec = max(start_sec + 1, min(end_sec, clip.duration))
 
-    edited_clip = clip.subclip(start_sec, end_sec)
-    edited_clip.write_videofile(
+    installed_clip = clip.subclip(start_sec, end_sec)
+    installed_clip.write_videofile(
         output_path, codec="libx264", audio_codec="aac"
     )
 
@@ -626,7 +668,7 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
       )
 
     clip.close()
-    edited_clip.close()
+    installed_clip.close()
     await msg.delete()
 
   except Exception as e:
@@ -657,7 +699,7 @@ if __name__ == "__main__":
   bot_app.add_handler(MessageHandler(filters.VIDEO, handle_video))
 
   print(
-      "Kai Bot mit Miss Lucy, Langzeitgedächtnis und verbessertem"
-      " Standby-Modus gestartet..."
+      "Kai Bot mit Miss Lucy, Langzeitgedächtnis, Standby und"
+      " Video-Downloader gestartet..."
   )
   bot_app.run_polling()
