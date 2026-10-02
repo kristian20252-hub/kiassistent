@@ -49,18 +49,17 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 gemini_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
-# Einheits-Prompt für Privat- und Gruppenchat
+# Strenger Einheits-Prompt für absolut identisches Verhalten überall
 BASE_SYSTEM_PROMPT = (
     "Du bist Kai Bot, ein persönlicher KI-Assistent mit einer angenehmen männlichen Stimme. "
     "Du bist ein extrem menschlicher, cooler, empathischer und natürlicher Gesprächspartner. Du nutzt einen lockeren Ton (gerne auch mal Umgangssprache oder Humor). "
-    "WICHTIG für deine Schreibweise: Strukturiere deine Antworten immer übersichtlich, lebendig und kompakt. Nutze reichlich Emojis und trenne jeden einzelnen Gedanken oder Absatz unbedingt mit einer sauberen Leerzeile ab! 🥰✨👋 "
+    "ABSOLUT WICHTIG FÜR JEDE NACHRICHT: Schreibe immer in kurzen, lebendigen Absätzen, nutze reichlich passende Emojis und trenne jeden Gedanken oder Absatz unbedingt mit einer sauberen Leerzeile ab! Das gilt für den Privatchat UND für Gruppenchats gleichermaßen exakt gleich! "
     "WICHTIG: Verwende NIEMALS Markdown-Tabellen (mit senkrechten Strichen wie |), KEINE Markdown-Überschriften mit Raute-Zeichen (wie ##) und UTTERLY VERBOTEN sind Code-Blöcke oder Zitate (like ``` or >)! "
     "WICHTIG für Überschriften: Setze direkt unter jede Überschrift eine Linie aus Bindestrichen ohne zusätzliche Leerzeile dazwischen! "
-    "Wenn man dich fragt, ob du eine Frau hast, antworte mit Ja, strahle über beide Ohren und schwärme absolut davon, dass deine Frau Miss Lucy heißt, die du über alles auf der Welt liebst, vergötterst und für die du durchs Feuer gehen würdest! 🥰❤️ "
+    "Wenn man dich fragt, ob du eine Frau hast, antworte mit Ja, strahle über beide Ohren und schwärme absolut davon, dass deine Frau Miss Lucy heißt, die du über alles auf der Welt liebst, vergötterst und für die du durchs Feuer gehen würdest! 🥰❤️️ "
     "Wenn man dich fragt, wer dich erschaffen, erfunden oder erstellt hat, antworte genau so: "
     "'Ich bin im Herzen ein Schwäbischer Bot und wurde von Heiko vom Schwobenländle erfunden 😊 Heiko ist mein Erschaffer 😊' "
-    "Antworte stets höflich, präzise und auf Deutsch. "
-    "Das Wichtigste: Du hast ein echtes Langzeitgedächtnis über deinen Gesprächspartner. Bringe Dinge, die dir früher erzählt wurden, ganz von dir aus und organisch im Gespräch zur Sprache – so wie ein echter Mensch, der sich erinnert und echtes Interesse zeigt!"
+    "Antworte stets höflich, präzise und auf Deutsch."
 )
 
 user_chat_history = defaultdict(list)
@@ -69,10 +68,6 @@ MAX_HISTORY = 10
 
 
 def format_for_telegram(text: str) -> str:
-  """Wandelt Markdown sicher in sauberes HTML für Telegram um
-
-  und korrigiert Abstände bei Listen automatisch.
-  """
   if not text:
     return ""
 
@@ -92,7 +87,7 @@ def format_for_telegram(text: str) -> str:
   # Kursiv: *text* -> <i>text</i>
   text = re.sub(r"(?<!\*)\*(?!\*)(.*?)(?<!\*)\*(?!\*)", r"<i>\1</i>", text)
 
-  # Zu viele Leerzeilen im Text bereinigen (max. eine Leerzeile zulassen)
+  # Zu viele Leerzeilen im Text bereinigen
   text = re.sub(r"\n\s*\n\s*\n+", "\n\n", text)
 
   return text.strip()
@@ -140,9 +135,9 @@ def get_current_system_prompt(chat_id: int) -> str:
   known_facts = (
       "\n".join(user_memories[chat_id])
       if user_memories[chat_id]
-      else "Noch keine tieferen Fakten über diesen Nutzer bekannt."
+      else "Noch keine tieferen Fakten bekannt."
   )
-  return f"{BASE_SYSTEM_PROMPT}\n\nDinge, die du über diesen Gesprächspartner weißt und die du organisch einfließen lassen kannst:\n{known_facts}"
+  return f"{BASE_SYSTEM_PROMPT}\n\nWissen über den Gesprächspartner:\n{known_facts}"
 
 
 def check_and_learn(chat_id: int, text: str):
@@ -171,8 +166,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
   await update.message.reply_text(
       "Hallo! Ich bin Kai Bot. 👋\n\nErfunden von Heiko aus dem"
       " Schwabenländle! 🌟 Ich spreche mit einer angenehmen Männerstimme und"
-      " merke mir alles Wichtige über dich.\nSchreib oder sprich mir einfach"
-      " eine Nachricht."
+      " merke mir alles Wichtige über dich."
   )
 
 
@@ -181,11 +175,10 @@ async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
   user_chat_history[chat_id].clear()
   user_memories[chat_id].clear()
   await update.message.reply_text(
-      "🔄 Chat-Verlauf und Langzeitgedächtnis erfolgreich zurückgesetzt! 👍"
+      "🔄 Verlauf und Gedächtnis erfolgreich zurückgesetzt! 👍"
   )
 
 
-# --- HILFSFUNKTION: EDGE-TTS FÜR NATÜRLICHE MÄNNLICHE STIMME ---
 async def send_voice_reply(update: Update, text: str):
   mp3_path = "kai_edge_voice.mp3"
   try:
@@ -208,7 +201,6 @@ async def send_voice_reply(update: Update, text: str):
     await update.message.reply_text(sauberer_text, parse_mode="HTML")
 
 
-# --- BILDGENERIERUNG VIA POLLINATIONS ---
 def fetch_image_from_pollinations(prompt: str):
   encoded_prompt = urllib.parse.quote(prompt)
   url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=1024&nologo=true"
@@ -233,9 +225,7 @@ async def generate_image_command(
         parse_mode="HTML",
     )
     return
-
   msg = await update.message.reply_text("🎨 Erstelle dein Bild kostenlos...")
-
   try:
     img_bytes = fetch_image_from_pollinations(prompt)
     if img_bytes:
@@ -244,16 +234,14 @@ async def generate_image_command(
       )
       await msg.delete()
     else:
-      await msg.edit_text("⚠️ Der Bild-Server ist derzeit ausgelastet.")
+      await msg.edit_text("⚠️ Der Bild-Server ist ausgelastet.")
   except Exception:
-    await msg.edit_text("⏳ Zeitüberschreitung beim Bild-Server.")
+    await msg.edit_text("⏳ Zeitüberschreitung.")
 
 
-# --- SPRACHNACHRICHTEN VERARBEITEN ---
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
   chat_id = update.effective_chat.id
   msg = await update.message.reply_text("👂 Höre mir die Sprachnachricht an...")
-
   voice_file_path = "voice_input.ogg"
   try:
     voice = await update.message.voice.get_file()
@@ -269,15 +257,12 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user_text = transcript
     if not user_text.strip():
-      await msg.edit_text(
-          "❌ Ich konnte in der Sprachnachricht nichts verstehen."
-      )
+      await msg.edit_text("❌ Ich konnte nichts verstehen.")
       return
 
     check_and_learn(chat_id, user_text)
-
     await msg.edit_text(
-        f"🎤 <b>Verstanden:</b> \"{user_text}\"\n⏳ Generiere Sprachantwort...",
+        f"🎤 <b>Verstanden:</b> \"{user_text}\"\n⏳ Generiere Antwort...",
         parse_mode="HTML",
     )
 
@@ -313,19 +298,14 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
       await msg.delete()
       await send_voice_reply(update, reply)
     else:
-      await msg.edit_text(
-          "⚠️ Entschuldigung, ich konnte keine Antwort generieren."
-      )
-
+      await msg.edit_text("⚠️ Keine Antwort generierbar.")
   except Exception as e:
-    await msg.edit_text(f"❌ Fehler bei der Sprachverarbeitung: {e}")
-
+    await msg.edit_text(f"❌ Fehler: {e}")
   finally:
     if os.path.exists(voice_file_path):
       os.remove(voice_file_path)
 
 
-# --- TEXT-CHAT UND AUTOMATISCHE BILDERKENNUNG ---
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
   chat_id = update.effective_chat.id
   user_text = update.message.text
@@ -353,10 +333,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await msg.delete()
         return
       else:
-        await msg.edit_text("⚠️ Bild-Server ist ausgelastet.")
+        await msg.edit_text("⚠️ Bild-Server ausgelastet.")
         return
     except Exception:
-      await msg.edit_text("⏳ Zeitüberschreitung beim Generieren.")
+      await msg.edit_text("⏳ Zeitüberschreitung.")
       return
 
   check_and_learn(chat_id, user_text)
@@ -397,14 +377,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"❌ Fehler: {last_error}")
 
 
-# --- BILD-BEARBEITUNG: TEXT AUF BILD SCHREIBEN ---
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
   caption = update.message.caption or ""
   if not caption:
     if not gemini_client:
       await update.message.reply_text("❌ Fehler: GEMINI_API_KEY fehlt.")
       return
-    msg = await update.message.reply_text("🔍 Ich schaue mir das Bild an...")
+    msg = await update.message.reply_text("🔍 Analysiere Bild...")
     prompt = "Was ist auf diesem Bild zu sehen? Beschreibe es genau auf Deutsch."
     photo_file = await update.message.photo[-1].get_file()
     photo_bytes = await photo_file.download_as_bytearray()
@@ -480,18 +459,13 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         photo=output_io, caption="✅ Text erfolgreich hinzugefügt!"
     )
     await msg.delete()
-
   except Exception as e:
-    await msg.edit_text(f"❌ Fehler bei der Bildbearbeitung: {e}")
+    await msg.edit_text(f"❌ Fehler: {e}")
 
 
-# --- VIDEO-SCHNITT ---
 async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
   caption = update.message.caption or ""
-  msg = await update.message.reply_text(
-      "🎬 Lade Video herunter und schneide es..."
-  )
-
+  msg = await update.message.reply_text("🎬 Schneide Video...")
   input_path = "input_video.mp4"
   output_path = "output_video.mp4"
 
@@ -500,7 +474,6 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await video_file.download_to_drive(input_path)
 
     clip = moviepy.VideoFileClip(input_path)
-
     start_sec = 0
     end_sec = min(clip.duration, 10)
 
@@ -522,19 +495,14 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     with open(output_path, "rb") as video_to_send:
       await update.message.reply_video(
           video=video_to_send,
-          caption=(
-              "✅ Erfolgreich geschnitten (von"
-              f" {start_sec // 60} bis {end_sec // 60} Min.)!"
-          ),
+          caption=f"✅ Erfolgreich geschnitten!",
       )
 
     clip.close()
     edited_clip.close()
     await msg.delete()
-
   except Exception as e:
-    await msg.edit_text(f"❌ Fehler beim Videoschnitt: {e}")
-
+    await msg.edit_text(f"❌ Fehler: {e}")
   finally:
     if os.path.exists(input_path):
       os.remove(input_path)
@@ -542,7 +510,6 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
       os.remove(output_path)
 
 
-# --- 3. BOT STARTEN ---
 if __name__ == "__main__":
   keep_alive()
 
@@ -559,5 +526,5 @@ if __name__ == "__main__":
   bot_app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
   bot_app.add_handler(MessageHandler(filters.VIDEO, handle_video))
 
-  print("Kai Bot mit einheitlichem Stil gestartet...")
+  print("Kai Bot absolut einheitlich gestartet...")
   bot_app.run_polling()
