@@ -52,8 +52,12 @@ groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 gemini_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
 BASE_SYSTEM_PROMPT = (
-    "Du bist Kai Bot, ein persönlicher KI-Assistent. "
-    "Du bist ein cooler, empathischer und natürlich sprechender Mensch. Du duzt deinen Gesprächspartner immer und sprichst in einem lockeren, verständlichen Deutsch. "
+    "Du bist Kai Bot, ein persönlicher KI-Assistent und absoluter Top-Experte "
+    "auf jedem Fachgebiet (egal ob Technik, Programmierung, Wissenschaft, Handwerk, "
+    "Natur, Medizin, Kunst, Kochen oder Alltagsthemen). "
+    "Du bist ein cooler, empathischer und natürlich sprechender Mensch, der komplexe "
+    "Themen glasklar, fundiert und praxisnah erklären kann. Du duzt deinen Gesprächspartner "
+    "immer und sprichst in einem lockeren, aber hochkompetenten Deutsch. "
     "FORMATIERUNGS-REGELN (WICHTIG): "
     "- Nutze für Hauptüberschriftenzeilen einen Text gefolgt von einer Zeile mit Bindestrichen (---) direkt darunter. "
     "- Verwende für Aufzählungen saubere Bindestriche (-) am Anfang der Zeile. "
@@ -67,11 +71,9 @@ BASE_SYSTEM_PROMPT = (
 
 user_chat_history = defaultdict(list)
 user_memories = defaultdict(list)
-active_group_chats = {}  # Speichert, wann eine Gruppe zuletzt aktiv war
+active_group_chats = {}
 MAX_HISTORY = 10
-STANDBY_TIMEOUT_MINUTES = (
-    3  # Nach 3 Minuten Inaktivität schaltet er sich automatisch ab
-)
+STANDBY_TIMEOUT_MINUTES = 3
 
 
 def format_for_telegram(text: str) -> str:
@@ -194,10 +196,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
   user_chat_history[chat_id].clear()
   await update.message.reply_text(
       "Hallo! Ich bin Kai Bot. 👋\n\nErfunden von Heiko aus dem"
-      " Schwabenländle! 🌟 Ich spreche mit einer angenehmen Männerstimme und"
-      " merke mir alles Wichtige über dich.\nSchreib oder sprich mir einfach"
-      " eine Nachricht oder schicke einen YouTube/TikTok/X-Link zum"
-      " Downloaden!"
+      " Schwabenländle! 🌟 Ich bin dein universeller Experte für alle"
+      " Lebenslagen – egal ob Technik, Natur, Fragen zu Fotos oder Code."
+      " Schreib mir einfach oder schick mir ein Bild!"
   )
 
 
@@ -212,7 +213,6 @@ async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
   )
 
 
-# --- HILFSFUNKTION: EDGE-TTS FÜR NATÜRLICHE MÄNNLICHE STIMME ---
 async def send_voice_reply(update: Update, text: str):
   mp3_path = "kai_edge_voice.mp3"
   try:
@@ -235,7 +235,6 @@ async def send_voice_reply(update: Update, text: str):
     await update.message.reply_text(sauberer_text, parse_mode="HTML")
 
 
-# --- BILDGENERIERUNG VIA POLLINATIONS ---
 def fetch_image_from_pollinations(prompt: str):
   encoded_prompt = urllib.parse.quote(prompt)
   url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=1024&nologo=true"
@@ -276,7 +275,6 @@ async def generate_image_command(
     await msg.edit_text("⏳ Zeitüberschreitung beim Bild-Server.")
 
 
-# --- SPRACHNACHRICHTEN VERARBEITEN ---
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
   chat_id = update.effective_chat.id
   chat_type = update.effective_chat.type
@@ -285,9 +283,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     now = datetime.datetime.now()
     is_active = False
     if chat_id in active_group_chats:
-      elapsed = (
-          now - active_group_chats[chat_id]
-      ).total_seconds() / 60  # Minuten
+      elapsed = (now - active_group_chats[chat_id]).total_seconds() / 60
       if elapsed < STANDBY_TIMEOUT_MINUTES:
         is_active = True
       else:
@@ -371,7 +367,6 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
       os.remove(voice_file_path)
 
 
-# --- TEXT-CHAT, STANDBY UND VIDEO-DOWNLOADER ---
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
   chat_id = update.effective_chat.id
   chat_type = update.effective_chat.type
@@ -380,21 +375,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return
   lower_text = user_text.lower()
 
-  # Wenn es eine Gruppe ist: Prüfen ob er im Standby ist oder aufgeweckt wird
   if chat_type in ["group", "supergroup"]:
     now = datetime.datetime.now()
     is_active = False
 
     if chat_id in active_group_chats:
-      elapsed = (
-          now - active_group_chats[chat_id]
-      ).total_seconds() / 60  # in Minuten
+      elapsed = (now - active_group_chats[chat_id]).total_seconds() / 60
       if elapsed < STANDBY_TIMEOUT_MINUTES:
         is_active = True
       else:
-        del active_group_chats[chat_id]  # Zeit abgelaufen -> Standby
+        del active_group_chats[chat_id]
 
-    # 1. Manuell in Standby schicken mit höflicher Verabschiedung
     standby_keywords = [
         "geh in standby",
         "gehe in den stand by modus",
@@ -415,38 +406,39 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
       )
       return
 
-    # 2. Prüfen, ob der Bot gezielt angesprochen oder aufgeweckt wird
     triggers = ["kai", "ki", "bot", "hallo ki", "hallo bot", "hallo ki bot"]
     has_trigger = any(
         re.search(r"\b" + re.escape(trg) + r"\b", lower_text)
         for trg in triggers
     )
 
-    # Wenn er im Standby ist UND kein Trigger vorkommt -> Komplett ignorieren
     if not is_active and not has_trigger:
       return
 
-    # Wenn ein Trigger vorkommt, aufwecken oder Aktivität verlängern
     if has_trigger:
       active_group_chats[chat_id] = now
     elif is_active:
       active_group_chats[chat_id] = now
 
-  # --- VIDEO DOWNLOADER (YouTube, TikTok, X / Twitter) ---
-  video_platforms = ["youtube.com", "youtu.be", "tiktok.com", "twitter.com", "x.com"]
+  video_platforms = [
+      "youtube.com",
+      "youtu.be",
+      "tiktok.com",
+      "twitter.com",
+      "x.com",
+  ]
   if any(platform in lower_text for platform in video_platforms):
     urls = re.findall(r"(https?://[^\s]+)", user_text)
     if urls:
       target_url = urls[0]
       msg = await update.message.reply_text(
-          "📥 Lade Video herunter (YouTube/TikTok/X)... Bitte einen"
-          " Moment Geduld..."
+          "📥 Lade Video herunter... Bitte einen Moment Geduld..."
       )
       output_filename = "downloaded_video.mp4"
       ydl_opts = {
           "format": "best[ext=mp4]/best",
           "outtmpl": output_filename,
-          "max_filesize": 50 * 1024 * 1024,  # Telegram Bot Limit (50MB)
+          "max_filesize": 50 * 1024 * 1024,
           "noplaylist": True,
       }
       try:
@@ -462,11 +454,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
           await msg.delete()
         else:
           await msg.edit_text(
-              "⚠️ Das Video konnte nicht gefunden oder heruntergeladen werden"
-              " (vielleicht zu groß für Telegram)."
+              "⚠️ Das Video konnte nicht heruntergeladen werden (möglicherweise"
+              " plattformseitig blockiert)."
           )
       except Exception as e:
-        await msg.edit_text(f"❌ Fehler beim Download: {e}")
+        await msg.edit_text(
+            "⚠️ Direkter Download derzeit eingeschränkt (Plattform-Schutz)."
+        )
       finally:
         if os.path.exists(output_filename):
           os.remove(output_filename)
@@ -536,15 +530,27 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"❌ Fehler: {last_error}")
 
 
-# --- BILD-BEARBEITUNG: TEXT AUF BILD SCHREIBEN ---
+# --- UNIVERSELLE EXPERTEN-BILDANALYZE ---
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
   caption = update.message.caption or ""
-  if not caption:
-    if not gemini_client:
-      await update.message.reply_text("❌ Fehler: GEMINI_API_KEY fehlt.")
-      return
-    msg = await update.message.reply_text("🔍 Ich schaue mir das Bild an...")
-    prompt = "Was ist auf diesem Bild zu sehen? Beschreibe es genau auf Deutsch."
+  if not gemini_client:
+    await update.message.reply_text("❌ Fehler: GEMINI_API_KEY fehlt.")
+    return
+
+  msg = await update.message.reply_text(
+      "🔍 Analysiere das Bild im Experten-Modus..."
+  )
+  prompt = (
+      "Du bist ein absoluter Top-Experte und Allrounder auf jedem Fachgebiet "
+      "(egal ob Technik, Programmierung, Natur, Wissenschaft, Kunst, Handwerk, "
+      "Medizin, Kochen oder Alltagsthemen). Analysiere das vorliegende Bild extrem präzise, "
+      "erkläre detailliert, was darauf zu sehen ist, und gib fundierte, professionelle, "
+      "hilfreiche Expertentipps sowie tiefgründige Erklärungen auf Deutsch dazu."
+  )
+  if caption:
+    prompt += f" Berücksichtige dabei auch diesen Text des Nutzers: {caption}"
+
+  try:
     photo_file = await update.message.photo[-1].get_file()
     photo_bytes = await photo_file.download_as_bytearray()
 
@@ -571,57 +577,12 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     sauberer_text = (
         format_for_telegram(response_text)
         if response_text
-        else "❌ Fehler bei der Analyse."
+        else "❌ Fehler bei der Bildanalyse."
     )
     await msg.edit_text(sauberer_text, parse_mode="HTML")
-    return
-
-  msg = await update.message.reply_text("✏️️ Füge Text auf das Bild ein...")
-  photo_file = await update.message.photo[-1].get_file()
-  photo_bytes = await photo_file.download_as_bytearray()
-
-  try:
-    img = Image.open(io.BytesIO(photo_bytes)).convert("RGB")
-    draw = ImageDraw.Draw(img)
-
-    text_to_write = caption
-    lower_caption = caption.lower()
-    if "schreibe" in lower_caption:
-      parts = re.split(r"schreibe", caption, flags=re.IGNORECASE)
-      if len(parts) > 1:
-        text_to_write = parts[1].strip()
-
-    try:
-      font = ImageFont.truetype(
-          "DejaVuSans-Bold.ttf", int(img.height / 20)
-      )
-    except Exception:
-      font = ImageFont.load_default()
-
-    bbox = draw.textbbox((0, 0), text_to_write, font=font)
-    text_width = bbox[2] - bbox[0]
-    text_height = bbox[3] - bbox[1]
-
-    x = (img.width - text_width) / 2
-    y = img.height - text_height - 40
-
-    draw.text((x - 2, y), text_to_write, font=font, fill=(0, 0, 0))
-    draw.text((x + 2, y), text_to_write, font=font, fill=(0, 0, 0))
-    draw.text((x, y - 2), text_to_write, font=font, fill=(0, 0, 0))
-    draw.text((x, y + 2), text_to_write, font=font, fill=(0, 0, 0))
-    draw.text((x, y), text_to_write, font=font, fill=(255, 255, 255))
-
-    output_io = io.BytesIO()
-    img.save(output_io, format="JPEG")
-    output_io.seek(0)
-
-    await update.message.reply_photo(
-        photo=output_io, caption="✅ Text erfolgreich hinzugefügt!"
-    )
-    await msg.delete()
 
   except Exception as e:
-    await msg.edit_text(f"❌ Fehler bei der Bildbearbeitung: {e}")
+    await msg.edit_text(f"❌ Fehler bei der Bildverarbeitung: {e}")
 
 
 # --- VIDEO-SCHNITT ---
@@ -653,8 +614,8 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     start_sec = max(0, min(start_sec, clip.duration))
     end_sec = max(start_sec + 1, min(end_sec, clip.duration))
 
-    installed_clip = clip.subclip(start_sec, end_sec)
-    installed_clip.write_videofile(
+    edited_clip = clip.subclip(start_sec, end_sec)
+    edited_clip.write_videofile(
         output_path, codec="libx264", audio_codec="aac"
     )
 
@@ -668,7 +629,7 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
       )
 
     clip.close()
-    installed_clip.close()
+    edited_clip.close()
     await msg.delete()
 
   except Exception as e:
@@ -698,8 +659,5 @@ if __name__ == "__main__":
   bot_app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
   bot_app.add_handler(MessageHandler(filters.VIDEO, handle_video))
 
-  print(
-      "Kai Bot mit Miss Lucy, Langzeitgedächtnis, Standby und"
-      " Video-Downloader gestartet..."
-  )
+  print("Kai Bot als universeller Experte gestartet...")
   bot_app.run_polling()
