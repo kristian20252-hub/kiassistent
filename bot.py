@@ -69,9 +69,9 @@ MAX_HISTORY = 10
 
 
 def format_for_telegram(text: str) -> str:
-  """Wandelt Markdown (Rauten und Bindestriche) sicher in sauberes HTML für
+  """Zwingt den Text in eine einheitliche, saubere HTML-Struktur für Telegram,
 
-  Telegram um.
+  egal ob Rauten, Bindestriche oder nummerierte Überschriften verwendet wurden.
   """
   if not text:
     return ""
@@ -79,14 +79,22 @@ def format_for_telegram(text: str) -> str:
   text = text.replace("```", "")
   text = re.sub(r"^\s*>\s?", "", text, flags=re.MULTILINE)
 
-  # 1. Falls die KI Rauten (#) verwendet, direkt abfangen und umwandeln
+  # 1. Rauten-Überschriften (#) abfangen
   text = re.sub(
       r"^\s*#{1,6}\s*(.*?)$", r"\n<b>📌 \1</b>\n", text, flags=re.MULTILINE
   )
 
-  # 2. Überschriften mit Bindestrichen darunter in fettes HTML umwandeln
+  # 2. Bindestrich-Unterstreichungen (---) abfangen
   text = re.sub(
       r"^(.*?)\n\s*---+\s*$", r"\n<b>📌 \1</b>\n", text, flags=re.MULTILINE
+  )
+
+  # 3. Falls die KI trotz allem "1. Überschrift:" schreibt, automatisch in fette HTML-Überschriften umwandeln
+  text = re.sub(
+      r"^\s*\d+\.\s+([A-ZÄÖÜa-zäöüß\s\?]+)(?:\s*[-–—]\s*|\n)",
+      r"\n<b>📌 \1</b>\n",
+      text,
+      flags=re.MULTILINE,
   )
 
   # Fett: **text** -> <b>text</b>
@@ -394,7 +402,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
   if reply:
     user_chat_history[chat_id].append({"role": "assistant", "content": reply})
     sauberer_text = format_for_telegram(reply)
-    await update.message.reply_text(sauberer_text, parse_mode="HTML")
+    await update.message.reply_text(
+        sauberer_text, parse_mode="HTML"
+    )  # Hier wird nun immer HTML erzwungen
   else:
     await update.message.reply_text(f"❌ Fehler: {last_error}")
 
@@ -439,7 +449,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await msg.edit_text(sauberer_text, parse_mode="HTML")
     return
 
-  msg = await update.message.reply_text("✏️ Füge Text auf das Bild ein...")
+  msg = await update.message.reply_text("✏️️ Füge Text auf das Bild ein...")
   photo_file = await update.message.photo[-1].get_file()
   photo_bytes = await photo_file.download_as_bytearray()
 
