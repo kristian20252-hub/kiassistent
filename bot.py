@@ -67,34 +67,32 @@ user_memories = defaultdict(list)
 MAX_HISTORY = 10
 
 
-def force_newlines(text: str) -> str:
-  """Zwingt den Bot dazu, vor Aufzählungspunkten (z.B. - Karosserie:)
-
-  immer einen sauberen Zeilenumbruch zu machen, falls das Modell sie in einer
-  Zeile verschluckt hat.
-  """
-  if not text:
-    return ""
-  # Sichert ab, dass ein Bindestrich mit einem Wort direkt nach einem Punkt/Leerzeichen eine neue Zeile bekommt
-  text = re.sub(r"(?<=\w)\s+-\s+(?=[A-ZÄÖÜ])", r"\n- ", text)
-  return text
-
-
 def format_for_telegram(text: str) -> str:
-  """Wandelt Markdown (Überschriften, Fett, Kursiv)
+  """Wandelt Markdown in HTML um und setzt jeden Aufzählungspunkt
 
-  sicher in sauberes HTML für Telegram um.
+  automatisch in einen eigenen Kasten (Blockquote).
   """
   if not text:
     return ""
-  text = force_newlines(text)
-  # Überschriften (## Text) in Fett umwandeln
+
+  # Überschriften in Fett umwandeln
   text = re.sub(r"^#{1,6}\s*(.*?)$", r"\n<b>📌 \1</b>\n", text, flags=re.MULTILINE)
   # Fett: **text** -> <b>text</b>
   text = re.sub(r"\*\*(.*?)\*\*", r"<b>\1</b>", text)
   # Kursiv: *text* -> <i>text</i>
   text = re.sub(r"(?<!\*)\*(?!\*)(.*?)(?<!\*)\*(?!\*)", r"<i>\1</i>", text)
-  return text
+
+  # Trennt Aufzählungen auf und packt jeden Punkt (- ...) in einen eigenen Kasten
+  parts = re.split(r"\n(?=-\s)", text)
+  wrapped_parts = []
+  for part in parts:
+    cleaned_part = part.strip()
+    if cleaned_part.startswith("-"):
+      wrapped_parts.append(f"<blockquote>{cleaned_part}</blockquote>")
+    else:
+      wrapped_parts.append(cleaned_part)
+
+  return "\n".join(wrapped_parts)
 
 
 def get_chat_models():
@@ -313,7 +311,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
       await send_voice_reply(update, reply)
     else:
       await msg.edit_text(
-          "⚠️️ Entschuldigung, ich konnte keine Antwort generieren."
+          "⚠️ Entschuldigung, ich konnte keine Antwort generieren."
       )
 
   except Exception as e:
@@ -436,7 +434,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await msg.edit_text(sauberer_text, parse_mode="HTML")
     return
 
-  msg = await update.message.reply_text("✏️️ Füge Text auf das Bild ein...")
+  msg = await update.message.reply_text("✏️ Füge Text auf das Bild ein...")
   photo_file = await update.message.photo[-1].get_file()
   photo_bytes = await photo_file.download_as_bytearray()
 
