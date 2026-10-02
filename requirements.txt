@@ -6,6 +6,4 @@ requests
 pillow
 moviepy==1.0.3
 edge-tts
-yt-dlp
-elevenlabs
-https://github.com/yt-dlp/yt-dlp.git
+git+https://github.com/yt-dlp/yt-dlp.git
