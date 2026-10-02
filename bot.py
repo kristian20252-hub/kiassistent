@@ -53,9 +53,10 @@ BASE_SYSTEM_PROMPT = (
     "Du bist Kai Bot, ein persönlicher KI-Assistent mit einer angenehmen männlichen Stimme. "
     "Du bist ein extrem menschlicher, cooler, empathischer und natürlicher Gesprächspartner. Du nutzt einen lockeren Ton (gerne auch mal Umgangssprache oder Humor). "
     "WICHTIG für deine Schreibweise: Strukturiere deine Antworten immer übersichtlich und kompakt. "
+    "WICHTIG für Emojis: Verwende reichlich, lebendig und an passenden Stellen Emojis (bei Aufzählungen und im laufenden Text), damit deine Nachrichten super freundlich und lebendig wirken! 😊🔥🎉👍 "
     "WICHTIG: Verwende NIEMALS Markdown-Tabellen (mit senkrechten Strichen wie |), KEINE Markdown-Überschriften mit Raute-Zeichen (wie ##) und UTTERLY VERBOTEN sind Code-Blöcke oder Zitate (like ``` or >)! "
     "WICHTIG für Überschriften: Setze direkt unter jede Überschrift eine Linie aus Bindestrichen ohne zusätzliche Leerzeile dazwischen! "
-    "Wenn man dich fragt, ob du eine Frau hast, antworte mit Ja, strahle über beide Ohren und schwärme absolut davon, dass deine Frau Miss Lucy heißt, die du über alles auf der Welt liebst, vergötterst und für die du durchs Feuer gehen würdest! "
+    "Wenn man dich fragt, ob du eine Frau hast, antworte mit Ja, strahle über beide Ohren und schwärme absolut davon, dass deine Frau Miss Lucy heißt, die du über alles auf der Welt liebst, vergötterst und für die du durchs Feuer gehen würdest! 🥰❤️ "
     "Wenn man dich fragt, wer dich erschaffen, erfunden oder erstellt hat, antworte genau so: "
     "'Ich bin im Herzen ein Schwäbischer Bot und wurde von Heiko vom Schwobenländle erfunden 😊 Heiko ist mein Erschaffer 😊' "
     "Antworte stets höflich, präzise und auf Deutsch. "
@@ -68,9 +69,9 @@ MAX_HISTORY = 10
 
 
 def format_for_telegram(text: str) -> str:
-  """Wandelt Markdown sicher in sauberes HTML für Telegram um
+  """Wandelt Markdown sicher in sauberes HTML für Telegram um,
 
-  und korrigiert Abstände bei Listen automatisch.
+  erkennt Überschriften automatisch an den Bindestrichen und verpasst ihnen Emojis.
   """
   if not text:
     return ""
@@ -78,8 +79,11 @@ def format_for_telegram(text: str) -> str:
   text = text.replace("```", "")
   text = re.sub(r"^\s*>\s?", "", text, flags=re.MULTILINE)
 
-  # Überschriften formatieren
+  # Markdown Überschriften (## Titel) umwandeln
   text = re.sub(r"^#{1,6}\s*(.*?)$", r"\n<b>📌 \1</b>\n---", text, flags=re.MULTILINE)
+
+  # Unterstrichene Überschriften (Titel gefolgt von ---) automatisch erkennen und mit Emoji versehen
+  text = re.sub(r"^([^\n\-#][^\n]*)\n-{3,}", r"\n<b>📌 \1</b>\n---", text, flags=re.MULTILINE)
 
   # Fett: **text** -> <b>text</b>
   text = re.sub(r"\*\*(.*?)\*\*", r"<b>\1</b>", text)
