@@ -71,7 +71,7 @@ MAX_HISTORY = 10
 def format_for_telegram(text: str) -> str:
   """Formatiert den Text so, dass Überschriften und jeder einzelne
 
-  Aufzählungspunkt perfekt durch Leerzeilen getrennt sind.
+  Aufzählungspunkt (egal ob Bindestrich, Buchstabe oder Zahl) perfekt durch Leerzeilen getrennt sind.
   """
   if not text:
     return ""
@@ -108,12 +108,19 @@ def format_for_telegram(text: str) -> str:
   # Leerzeilen vor und nach Überschriften erzwingen
   text = re.sub(r"\s*<b>📌 (.*?)</b>\s*", r"\n\n<b>📌 \1</b>\n\n", text)
 
-  # Nach jedem Aufzählungspunkt (- ...) eine Leerzeile erzwingen
+  # Nach jedem Aufzählungspunkt (- ...) oder Buchstaben/Zahlen-Punkt (a), b) / 1., 2.) eine Leerzeile erzwingen
   lines = text.split("\n")
   new_lines = []
   for i, line in enumerate(lines):
     new_lines.append(line)
-    if line.strip().startswith("-"):
+    stripped = line.strip()
+    is_bullet = (
+        stripped.startswith("-")
+        or bool(re.match(r"^[a-zA-Z]\)", stripped))
+        or bool(re.match(r"^\d+[\.\)]", stripped))
+    )
+
+    if is_bullet:
       if i + 1 < len(lines) and lines[i + 1].strip() != "":
         new_lines.append("")
 
