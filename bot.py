@@ -66,10 +66,10 @@ BASE_SYSTEM_PROMPT = (
 
 user_chat_history = defaultdict(list)
 user_memories = defaultdict(list)
-active_group_chats = {}  # Speichert, wann eine Gruppe zuletzt aktiv war (für Standby)
+active_group_chats = {}  # Speichert, wann eine Gruppe zuletzt aktiv war
 MAX_HISTORY = 10
 STANDBY_TIMEOUT_MINUTES = (
-    3  # Nach 3 Minuten Inaktivität schaltet er sich ab
+    3  # Nach 3 Minuten Inaktivität schaltet er sich automatisch ab
 )
 
 
@@ -279,7 +279,6 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
   chat_id = update.effective_chat.id
   chat_type = update.effective_chat.type
 
-  # Gruppen-Standby-Prüfung für Sprachnachrichten
   if chat_type in ["group", "supergroup"]:
     now = datetime.datetime.now()
     is_active = False
@@ -290,10 +289,10 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
       if elapsed < STANDBY_TIMEOUT_MINUTES:
         is_active = True
       else:
-        del active_group_chats[chat_id]  # Timeout -> Standby
+        del active_group_chats[chat_id]
 
     if not is_active:
-      return  # Im Standby auf Sprachnachrichten in Gruppen nicht reagieren
+      return
 
   msg = await update.message.reply_text("👂 Höre mir die Sprachnachricht an...")
   voice_file_path = "voice_input.ogg"
@@ -316,7 +315,6 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
       )
       return
 
-    # Aktivität aktualisieren
     if chat_type in ["group", "supergroup"]:
       active_group_chats[chat_id] = datetime.datetime.now()
 
@@ -394,34 +392,42 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
       else:
         del active_group_chats[chat_id]  # Zeit abgelaufen -> Standby
 
-    # Prüfen, ob der Bot gezielt angesprochen oder aufgeweckt wird
-    triggers = ["kai", "ki", "bot", "hallo ki", "hallo bot"]
+    # 1. Manuell in Standby schicken mit höflicher Verabschiedung
+    standby_keywords = [
+        "geh in standby",
+        "gehe in den stand by modus",
+        "schlaf",
+        "tschüss kai",
+        "feierabend",
+        "stopp",
+        "kai geh in standby modus",
+    ]
+    if any(kw in lower_text for kw in standby_keywords):
+      if chat_id in active_group_chats:
+        del active_group_chats[chat_id]
+      await update.message.reply_text(
+          "Alles klar, ich verabschiede mich dann mal kurz und gehe in den"
+          " Standby-Modus! 😴 Ich bin aber jederzeit wieder für dich da, sobald"
+          " du meinen Namen sagst, 'hallo bot' oder 'hallo ki bot' schreibst."
+          " Bis bald! 👋"
+      )
+      return
+
+    # 2. Prüfen, ob der Bot gezielt angesprochen oder aufgeweckt wird
+    triggers = ["kai", "ki", "bot", "hallo ki", "hallo bot", "hallo ki bot"]
     has_trigger = any(
         re.search(r"\b" + re.escape(trg) + r"\b", lower_text)
         for trg in triggers
     )
 
-    # Manuell in Standby schicken
-    if any(
-        kw in lower_text
-        for kw in ["geh in standby", "schlaf", "tschüss kai", "feierabend"]
-    ):
-      if chat_id in active_group_chats:
-        del active_group_chats[chat_id]
-      await update.message.reply_text(
-          "😴 Bin im Standby-Modus. Sag Bescheid, wenn du mich brauchst!"
-      )
-      return
-
-    # Wenn er im Standby ist UND kein Trigger vorkommt -> Ignorieren
+    # Wenn er im Standby ist UND kein Trigger vorkommt -> Komplett ignorieren
     if not is_active and not has_trigger:
       return
 
-    # Wenn ein Trigger vorkommt, wecken wir ihn auf und setzen den Zeitstempel
+    # Wenn ein Trigger vorkommt, aufwecken oder Aktivität verlängern
     if has_trigger:
       active_group_chats[chat_id] = now
     elif is_active:
-      # Aktivität bei jeder Nachricht verlängern
       active_group_chats[chat_id] = now
 
   image_triggers = [
@@ -651,7 +657,7 @@ if __name__ == "__main__":
   bot_app.add_handler(MessageHandler(filters.VIDEO, handle_video))
 
   print(
-      "Kai Bot mit Miss Lucy, Langzeitgedächtnis und Standby-Modus"
-      " gestartet..."
+      "Kai Bot mit Miss Lucy, Langzeitgedächtnis und verbessertem"
+      " Standby-Modus gestartet..."
   )
   bot_app.run_polling()
