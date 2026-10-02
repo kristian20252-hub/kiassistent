@@ -8,9 +8,7 @@ from flask import Flask
 from google import genai
 from google.genai import types
 from groq import Groq
-from moviepy.video.io.VideoFileClip import (
-    VideoFileClip,
-)  # Korrigierter Import für MoviePy 2.x
+from moviepy.editor import VideoFileClip  # Standard-Import für MoviePy
 from PIL import Image, ImageDraw, ImageFont
 import requests
 from telegram import Update
@@ -534,8 +532,8 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     start_sec = max(0, min(start_sec, clip.duration))
     end_sec = max(start_sec + 1, min(end_sec, clip.duration))
 
-    # Kompatibel mit MoviePy 2.x (.subclipped statt .subclip)
-    edited_clip = clip.subclipped(start_sec, end_sec)
+    # Wieder zurück auf .subclip(...) geändert für maximale Kompatibilität
+    edited_clip = clip.subclip(start_sec, end_sec)
     edited_clip.write_videofile(
         output_path, codec="libx264", audio_codec="aac"
     )
