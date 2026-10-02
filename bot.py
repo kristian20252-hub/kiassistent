@@ -8,7 +8,9 @@ from flask import Flask
 from google import genai
 from google.genai import types
 from groq import Groq
-import moviepy
+from moviepy.video.io.VideoFileClip import (
+    VideoFileClip,
+)  # Korrigierter Import für MoviePy 2.x
 from PIL import Image, ImageDraw, ImageFont
 import requests
 from telegram import Update
@@ -69,31 +71,20 @@ MAX_HISTORY = 10
 
 
 def format_for_telegram(text: str) -> str:
-  """Formatiert den Text so, dass Überschriften und jeder einzelne
-
-  Aufzählungspunkt (egal ob Bindestrich, Buchstabe oder Zahl) perfekt durch Leerzeilen getrennt sind.
-  """
   if not text:
     return ""
 
   text = text.replace("```", "")
   text = re.sub(r"^\s*>\s?", "", text, flags=re.MULTILINE)
 
-  # 1. Rauten-Überschriften (#) abfangen
   text = re.sub(r"^\s*#{1,6}\s*(.*?)$", r"\n<b>📌 \1</b>", text, flags=re.MULTILINE)
-
-  # 2. Bindestrich-Unterstreichungen (---) abfangen
   text = re.sub(r"^(.*?)\n\s*---+\s*$", r"\n<b>📌 \1</b>", text, flags=re.MULTILINE)
-
-  # 3. Automatische Erkennung für Zwischenüberschriften vor Aufzählungen
   text = re.sub(
       r"^([A-ZÄÖÜa-zäöüß\s]{3,40})\n(?=\s*-\s)",
       r"\n<b>📌 \1</b>",
       text,
       flags=re.MULTILINE,
   )
-
-  # 4. Nummerierte Überschriften
   text = re.sub(
       r"^\s*\d+\.\s+([A-ZÄÖÜa-zäöüß\s\?]+)(?:\s*[-–—]\s*|\n)",
       r"\n<b>📌 \1</b>",
@@ -101,14 +92,11 @@ def format_for_telegram(text: str) -> str:
       flags=re.MULTILINE,
   )
 
-  # Fett & Kursiv
   text = re.sub(r"\*\*(.*?)\*\*", r"<b>\1</b>", text)
   text = re.sub(r"(?<!\*)\*(?!\*)(.*?)(?<!\*)\*(?!\*)", r"<i>\1</i>", text)
 
-  # Leerzeilen vor und nach Überschriften erzwingen
   text = re.sub(r"\s*<b>📌 (.*?)</b>\s*", r"\n\n<b>📌 \1</b>\n\n", text)
 
-  # Nach jedem Aufzählungspunkt (- ...) oder Buchstaben/Zahlen-Punkt (a), b) / 1., 2.) eine Leerzeile erzwingen
   lines = text.split("\n")
   new_lines = []
   for i, line in enumerate(lines):
@@ -125,8 +113,6 @@ def format_for_telegram(text: str) -> str:
         new_lines.append("")
 
   text = "\n".join(new_lines)
-
-  # Zu viele Leerzeilen bereinigen (maximal 2 hintereinander)
   text = re.sub(r"\n\s*\n\s*\n+", "\n\n", text)
 
   return text.strip()
@@ -533,7 +519,7 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     video_file = await update.message.video.get_file()
     await video_file.download_to_drive(input_path)
 
-    clip = moviepy.VideoFileClip(input_path)
+    clip = VideoFileClip(input_path)
 
     start_sec = 0
     end_sec = min(clip.duration, 10)
@@ -548,6 +534,7 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     start_sec = max(0, min(start_sec, clip.duration))
     end_sec = max(start_sec + 1, min(end_sec, clip.duration))
 
+    # Kompatibel mit MoviePy 2.x (.subclipped statt .subclip)
     edited_clip = clip.subclipped(start_sec, end_sec)
     edited_clip.write_videofile(
         output_path, codec="libx264", audio_codec="aac"
