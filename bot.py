@@ -71,7 +71,8 @@ MAX_HISTORY = 10
 def format_for_telegram(text: str) -> str:
   """Wandelt Markdown sicher in sauberes HTML für Telegram um,
 
-  erkennt Überschriften automatisch und fügt saubere Abstände ein.
+  erkennt Überschriften automatisch und fügt oben sowie unten saubere Abstände
+  ein.
   """
   if not text:
     return ""
@@ -79,15 +80,18 @@ def format_for_telegram(text: str) -> str:
   text = text.replace("```", "")
   text = re.sub(r"^\s*>\s?", "", text, flags=re.MULTILINE)
 
-  # Markdown Überschriften (## Titel) umwandeln (mit Leerzeile danach)
+  # Markdown Überschriften (## Titel) umwandeln (mit Leerzeile davor und danach)
   text = re.sub(
-      r"^#{1,6}\s*(.*?)$", r"\n<b>📌 \1</b>\n---\n", text, flags=re.MULTILINE
+      r"^#{1,6}\s*(.*?)$",
+      r"\n\n<b>📌 \1</b>\n---\n",
+      text,
+      flags=re.MULTILINE,
   )
 
-  # Unterstrichene Überschriften automatisch erkennen und mit Emoji versehen (inkl. Leerzeile danach)
+  # Unterstrichene Überschriften automatisch erkennen und mit Emoji versehen (inkl. Leerzeile davor und danach)
   text = re.sub(
       r"^([^\n\-#][^\n]*)\n-{3,}",
-      r"\n<b>📌 \1</b>\n---\n",
+      r"\n\n<b>📌 \1</b>\n---\n",
       text,
       flags=re.MULTILINE,
   )
