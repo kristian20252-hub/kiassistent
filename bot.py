@@ -69,9 +69,9 @@ MAX_HISTORY = 10
 
 
 def format_for_telegram(text: str) -> str:
-  """Zwingt den Text in eine einheitliche, saubere HTML-Struktur für Telegram,
+  """Formatiert den Text so, dass Überschriften und jeder einzelne
 
-  egal ob Rauten, Bindestriche oder nummerierte Überschriften verwendet wurden.
+  Aufzählungspunkt perfekt durch Leerzeilen getrennt sind.
   """
   if not text:
     return ""
@@ -80,29 +80,46 @@ def format_for_telegram(text: str) -> str:
   text = re.sub(r"^\s*>\s?", "", text, flags=re.MULTILINE)
 
   # 1. Rauten-Überschriften (#) abfangen
-  text = re.sub(
-      r"^\s*#{1,6}\s*(.*?)$", r"\n<b>📌 \1</b>\n", text, flags=re.MULTILINE
-  )
+  text = re.sub(r"^\s*#{1,6}\s*(.*?)$", r"\n<b>📌 \1</b>", text, flags=re.MULTILINE)
 
   # 2. Bindestrich-Unterstreichungen (---) abfangen
-  text = re.sub(
-      r"^(.*?)\n\s*---+\s*$", r"\n<b>📌 \1</b>\n", text, flags=re.MULTILINE
-  )
+  text = re.sub(r"^(.*?)\n\s*---+\s*$", r"\n<b>📌 \1</b>", text, flags=re.MULTILINE)
 
-  # 3. Falls die KI trotz allem "1. Überschrift:" schreibt, automatisch in fette HTML-Überschriften umwandeln
+  # 3. Automatische Erkennung für Zwischenüberschriften vor Aufzählungen
   text = re.sub(
-      r"^\s*\d+\.\s+([A-ZÄÖÜa-zäöüß\s\?]+)(?:\s*[-–—]\s*|\n)",
-      r"\n<b>📌 \1</b>\n",
+      r"^([A-ZÄÖÜa-zäöüß\s]{3,40})\n(?=\s*-\s)",
+      r"\n<b>📌 \1</b>",
       text,
       flags=re.MULTILINE,
   )
 
-  # Fett: **text** -> <b>text</b>
+  # 4. Nummerierte Überschriften
+  text = re.sub(
+      r"^\s*\d+\.\s+([A-ZÄÖÜa-zäöüß\s\?]+)(?:\s*[-–—]\s*|\n)",
+      r"\n<b>📌 \1</b>",
+      text,
+      flags=re.MULTILINE,
+  )
+
+  # Fett & Kursiv
   text = re.sub(r"\*\*(.*?)\*\*", r"<b>\1</b>", text)
-  # Kursiv: *text* -> <i>text</i>
   text = re.sub(r"(?<!\*)\*(?!\*)(.*?)(?<!\*)\*(?!\*)", r"<i>\1</i>", text)
 
-  # Zu viele Leerzeilen bereinigen
+  # Leerzeilen vor und nach Überschriften erzwingen
+  text = re.sub(r"\s*<b>📌 (.*?)</b>\s*", r"\n\n<b>📌 \1</b>\n\n", text)
+
+  # Nach jedem Aufzählungspunkt (- ...) eine Leerzeile erzwingen
+  lines = text.split("\n")
+  new_lines = []
+  for i, line in enumerate(lines):
+    new_lines.append(line)
+    if line.strip().startswith("-"):
+      if i + 1 < len(lines) and lines[i + 1].strip() != "":
+        new_lines.append("")
+
+  text = "\n".join(new_lines)
+
+  # Zu viele Leerzeilen bereinigen (maximal 2 hintereinander)
   text = re.sub(r"\n\s*\n\s*\n+", "\n\n", text)
 
   return text.strip()
@@ -402,9 +419,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
   if reply:
     user_chat_history[chat_id].append({"role": "assistant", "content": reply})
     sauberer_text = format_for_telegram(reply)
-    await update.message.reply_text(
-        sauberer_text, parse_mode="HTML"
-    )  # Hier wird nun immer HTML erzwungen
+    await update.message.reply_text(sauberer_text, parse_mode="HTML")
   else:
     await update.message.reply_text(f"❌ Fehler: {last_error}")
 
@@ -449,7 +464,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await msg.edit_text(sauberer_text, parse_mode="HTML")
     return
 
-  msg = await update.message.reply_text("✏️️ Füge Text auf das Bild ein...")
+  msg = await update.message.reply_text("✏️ Füge Text auf das Bild ein...")
   photo_file = await update.message.photo[-1].get_file()
   photo_bytes = await photo_file.download_as_bytearray()
 
