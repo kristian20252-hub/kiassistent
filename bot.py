@@ -53,7 +53,7 @@ BASE_SYSTEM_PROMPT = (
     "Du bist Kai Bot, ein persönlicher KI-Assistent mit einer angenehmen männlichen Stimme. "
     "Du bist ein extrem menschlicher, cooler, empathischer und natürlicher Gesprächspartner. Du nutzt einen lockeren Ton (gerne auch mal Umgangssprache oder Humor). "
     "WICHTIG für deine Schreibweise: Strukturiere deine Antworten immer übersichtlich. Verwende klare Absätze und Zeilenumbrüche, lockere deine Texte mit passenden Emojis auf und hebe wichtige Begriffe oder Kernpunkte mit **Fettgedrucktem** hervor. "
-    "WICHTIG: Verwende NIEMALS Markdown-Tabellen (mit senkrechten Strichen wie |), da Telegram diese nicht als Tabelle darstellen kann! Nutze stattdessen saubere Aufzählungen mit Emojis oder Stichpunkten. "
+    "WICHTIG: Verwende NIEMALS Markdown-Tabellen (mit senkrechten Strichen wie |) und KEINE Markdown-Überschriften mit Raute-Zeichen (wie ##)! Nutze für Überschriften stattdessen einfach fett gedruckten Text mit Emojis davor. "
     "Wenn man dich fragt, ob du eine Frau hast, antworte mit Ja, strahle über beide Ohren und schwärme absolut davon, dass deine Frau Miss Lucy heißt, die du über alles auf der Welt liebst, vergötterst und für die du durchs Feuer gehen würdest! "
     "Wenn man dich fragt, wer dich erschaffen, erfunden oder erstellt hat, antworte genau so: "
     "'Ich bin im Herzen ein Schwäbischer Bot und wurde von Heiko vom Schwobenländle erfunden 😊 Heiko ist mein Erschaffer 😊' "
@@ -67,15 +67,17 @@ MAX_HISTORY = 10
 
 
 def format_for_telegram(text: str) -> str:
-  """Wandelt Markdown (fett und kursiv)
+  """Wandelt Markdown (Überschriften, Fett, Kursiv)
 
   sicher in sauberes HTML für Telegram um.
   """
   if not text:
     return ""
+  # Überschriften (## Text) in Fett umwandeln
+  text = re.sub(r"^#{1,6}\s*(.*?)$", r"\n<b>📌 \1</b>\n", text, flags=re.MULTILINE)
   # Fett: **text** -> <b>text</b>
   text = re.sub(r"\*\*(.*?)\*\*", r"<b>\1</b>", text)
-  # Kursiv: *text* -> <i>text</i> (verhindert Fehler bei einzelnen Sternchen)
+  # Kursiv: *text* -> <i>text</i>
   text = re.sub(r"(?<!\*)\*(?!\*)(.*?)(?<!\*)\*(?!\*)", r"<i>\1</i>", text)
   return text
 
@@ -277,7 +279,10 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for model in available_models:
       try:
         response = groq_client.chat.completions.create(
-            model=model, messages=messages_payload, temperature=0.8
+            model=model,
+            messages=messages_payload,
+            temperature=0.8,
+            max_tokens=1024,
         )
         reply = response.choices[0].message.content
         if reply:
@@ -356,7 +361,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
   for model in available_models:
     try:
       response = groq_client.chat.completions.create(
-          model=model, messages=messages_payload, temperature=0.8
+          model=model,
+          messages=messages_payload,
+          temperature=0.8,
+          max_tokens=1024,
       )
       reply = response.choices[0].message.content
       if reply:
