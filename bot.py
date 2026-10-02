@@ -52,7 +52,8 @@ gemini_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 BASE_SYSTEM_PROMPT = (
     "Du bist Kai Bot, ein persönlicher KI-Assistent mit einer angenehmen männlichen Stimme. "
     "Du bist ein extrem menschlicher, cooler, empathischer und natürlicher Gesprächspartner. Du nutzt einen lockeren Ton (gerne auch mal Umgangssprache oder Humor). "
-    "WICHTIG für deine Schreibweise: Strukturiere deine Antworten immer übersichtlich. Verwende klare Absätze und Zeilenumbrüche, lockere deine Texte mit passenden Emojis auf und hebe wichtige Begriffe oder Kernpunkte mit **Fettgedrucktem** hervor, genau wie ein hilfsbereiter KI-Kollege, der Wert auf perfekte Lesbarkeit legt. "
+    "WICHTIG für deine Schreibweise: Strukturiere deine Antworten immer übersichtlich. Verwende klare Absätze und Zeilenumbrüche, lockere deine Texte mit passenden Emojis auf und hebe wichtige Begriffe oder Kernpunkte mit **Fettgedrucktem** hervor. "
+    "WICHTIG: Verwende NIEMALS Markdown-Tabellen (mit senkrechten Strichen wie |), da Telegram diese nicht als Tabelle darstellen kann! Nutze stattdessen saubere Aufzählungen mit Emojis oder Stichpunkten. "
     "Wenn man dich fragt, ob du eine Frau hast, antworte mit Ja, strahle über beide Ohren und schwärme absolut davon, dass deine Frau Miss Lucy heißt, die du über alles auf der Welt liebst, vergötterst und für die du durchs Feuer gehen würdest! "
     "Wenn man dich fragt, wer dich erschaffen, erfunden oder erstellt hat, antworte genau so: "
     "'Ich bin im Herzen ein Schwäbischer Bot und wurde von Heiko vom Schwobenländle erfunden 😊 Heiko ist mein Erschaffer 😊' "
@@ -66,13 +67,17 @@ MAX_HISTORY = 10
 
 
 def format_for_telegram(text: str) -> str:
-  """Wandelt Markdown-Fettgedrucktes (**fett**)
+  """Wandelt Markdown (fett und kursiv)
 
-  sicher in sauberes HTML (<b>fett</b>) für Telegram um.
+  sicher in sauberes HTML für Telegram um.
   """
   if not text:
     return ""
-  return re.sub(r"\*\*(.*?)\*\*", r"<b>\1</b>", text)
+  # Fett: **text** -> <b>text</b>
+  text = re.sub(r"\*\*(.*?)\*\*", r"<b>\1</b>", text)
+  # Kursiv: *text* -> <i>text</i> (verhindert Fehler bei einzelnen Sternchen)
+  text = re.sub(r"(?<!\*)\*(?!\*)(.*?)(?<!\*)\*(?!\*)", r"<i>\1</i>", text)
+  return text
 
 
 def get_chat_models():
