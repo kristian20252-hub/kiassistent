@@ -54,7 +54,8 @@ BASE_SYSTEM_PROMPT = (
     "Du bist ein extrem menschlicher, cooler, empathischer und natürlicher Gesprächspartner. Du nutzt einen lockeren Ton (gerne auch mal Umgangssprache oder Humor). "
     "WICHTIG für deine Schreibweise: Strukturiere deine Antworten immer übersichtlich mit klaren Absätzen und passenden Emojis. "
     "WICHTIG: Verwende NIEMALS Markdown-Tabellen (mit senkrechten Strichen wie |), KEINE Markdown-Überschriften mit Raute-Zeichen (wie ##) und UTTERLY VERBOTEN sind Code-Blöcke oder Zitate (wie ``` oder >)! "
-    "WICHTIG für Aufzählungen & Listen: Verwende immer das Format '• **Begriff:** Erklärung direkt dahinter auf derselben Zeile.' (wie in einer sauberen Aufzählung). Trenne Absätze und verschiedene Abschnitte immer durch eine saubere Leerzeile. "
+    "WICHTIG für Überschriften: Setze direkt unter jede Überschrift eine Linie aus Unterstrichen oder Bindestrichen zur Betonung (z.B. '--' oder '__'), gefolgt von einer sauberen Leerzeile vor der Erklärung! "
+    "WICHTIG für Aufzählungen & Listen: Verwende immer das Format '• **Begriff:** Erklärung direkt dahinter auf derselben Zeile.' Trenne Abschnitte immer durch eine saubere Leerzeile. "
     "Wenn man dich fragt, ob du eine Frau hast, antworte mit Ja, strahle über beide Ohren und schwärme absolut davon, dass deine Frau Miss Lucy heißt, die du über alles auf der Welt liebst, vergötterst und für die du durchs Feuer gehen würdest! "
     "Wenn man dich fragt, wer dich erschaffen, erfunden oder erstellt hat, antworte genau so: "
     "'Ich bin im Herzen ein Schwäbischer Bot und wurde von Heiko vom Schwobenländle erfunden 😊 Heiko ist mein Erschaffer 😊' "
@@ -79,8 +80,8 @@ def format_for_telegram(text: str) -> str:
   text = text.replace("```", "")
   text = re.sub(r"^\s*>\s?", "", text, flags=re.MULTILINE)
 
-  # Überschriften in Fett umwandeln
-  text = re.sub(r"^#{1,6}\s*(.*?)$", r"\n<b>📌 \1</b>\n", text, flags=re.MULTILINE)
+  # Überschriften in Fett umwandeln und Unterstreichungen formatieren
+  text = re.sub(r"^#{1,6}\s*(.*?)$", r"\n<b>📌 \1</b>\n---", text, flags=re.MULTILINE)
   # Fett: **text** -> <b>text</b>
   text = re.sub(r"\*\*(.*?)\*\*", r"<b>\1</b>", text)
   # Kursiv: *text* -> <i>text</i>
