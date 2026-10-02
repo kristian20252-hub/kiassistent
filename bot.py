@@ -1,4 +1,5 @@
 from collections import defaultdict
+import datetime
 import io
 import os
 import re
@@ -8,7 +9,7 @@ from flask import Flask
 from google import genai
 from google.genai import types
 from groq import Groq
-from moviepy.editor import VideoFileClip  # Standard-Import für MoviePy
+from moviepy.editor import VideoFileClip
 from PIL import Image, ImageDraw, ImageFont
 import requests
 from telegram import Update
@@ -65,7 +66,11 @@ BASE_SYSTEM_PROMPT = (
 
 user_chat_history = defaultdict(list)
 user_memories = defaultdict(list)
+active_group_chats = {}  # Speichert, wann eine Gruppe zuletzt aktiv war (für Standby)
 MAX_HISTORY = 10
+STANDBY_TIMEOUT_MINUTES = (
+    3  # Nach 3 Minuten Inaktivität schaltet er sich ab
+)
 
 
 def format_for_telegram(text: str) -> str:
@@ -198,8 +203,10 @@ async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
   chat_id = update.effective_chat.id
   user_chat_history[chat_id].clear()
   user_memories[chat_id].clear()
+  if chat_id in active_group_chats:
+    del active_group_chats[chat_id]
   await update.message.reply_text(
-      "🔄 Chat-Verlauf und Langzeitgedächtnis erfolgreich zurückgesetzt!"
+      "🔄 Chat-Verlauf, Gedächtnis und Standby-Status zurückgesetzt!"
   )
 
 
@@ -270,8 +277,25 @@ async def generate_image_command(
 # --- SPRACHNACHRICHTEN VERARBEITEN ---
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
   chat_id = update.effective_chat.id
-  msg = await update.message.reply_text("👂 Höre mir die Sprachnachricht an...")
+  chat_type = update.effective_chat.type
 
+  # Gruppen-Standby-Prüfung für Sprachnachrichten
+  if chat_type in ["group", "supergroup"]:
+    now = datetime.datetime.now()
+    is_active = False
+    if chat_id in active_group_chats:
+      elapsed = (
+          now - active_group_chats[chat_id]
+      ).total_seconds() / 60  # Minuten
+      if elapsed < STANDBY_TIMEOUT_MINUTES:
+        is_active = True
+      else:
+        del active_group_chats[chat_id]  # Timeout -> Standby
+
+    if not is_active:
+      return  # Im Standby auf Sprachnachrichten in Gruppen nicht reagieren
+
+  msg = await update.message.reply_text("👂 Höre mir die Sprachnachricht an...")
   voice_file_path = "voice_input.ogg"
   try:
     voice = await update.message.voice.get_file()
@@ -291,6 +315,10 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
           "❌ Ich konnte in der Sprachnachricht nichts verstehen."
       )
       return
+
+    # Aktivität aktualisieren
+    if chat_type in ["group", "supergroup"]:
+      active_group_chats[chat_id] = datetime.datetime.now()
 
     check_and_learn(chat_id, user_text)
 
@@ -343,13 +371,58 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
       os.remove(voice_file_path)
 
 
-# --- TEXT-CHAT UND AUTOMATISCHE BILDERKENNUNG ---
+# --- TEXT-CHAT UND INTELLIGENTER STANDBY-MODUS ---
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
   chat_id = update.effective_chat.id
+  chat_type = update.effective_chat.type
   user_text = update.message.text
   if not user_text:
     return
   lower_text = user_text.lower()
+
+  # Wenn es eine Gruppe ist: Prüfen ob er im Standby ist oder aufgeweckt wird
+  if chat_type in ["group", "supergroup"]:
+    now = datetime.datetime.now()
+    is_active = False
+
+    if chat_id in active_group_chats:
+      elapsed = (
+          now - active_group_chats[chat_id]
+      ).total_seconds() / 60  # in Minuten
+      if elapsed < STANDBY_TIMEOUT_MINUTES:
+        is_active = True
+      else:
+        del active_group_chats[chat_id]  # Zeit abgelaufen -> Standby
+
+    # Prüfen, ob der Bot gezielt angesprochen oder aufgeweckt wird
+    triggers = ["kai", "ki", "bot", "hallo ki", "hallo bot"]
+    has_trigger = any(
+        re.search(r"\b" + re.escape(trg) + r"\b", lower_text)
+        for trg in triggers
+    )
+
+    # Manuell in Standby schicken
+    if any(
+        kw in lower_text
+        for kw in ["geh in standby", "schlaf", "tschüss kai", "feierabend"]
+    ):
+      if chat_id in active_group_chats:
+        del active_group_chats[chat_id]
+      await update.message.reply_text(
+          "😴 Bin im Standby-Modus. Sag Bescheid, wenn du mich brauchst!"
+      )
+      return
+
+    # Wenn er im Standby ist UND kein Trigger vorkommt -> Ignorieren
+    if not is_active and not has_trigger:
+      return
+
+    # Wenn ein Trigger vorkommt, wecken wir ihn auf und setzen den Zeitstempel
+    if has_trigger:
+      active_group_chats[chat_id] = now
+    elif is_active:
+      # Aktivität bei jeder Nachricht verlängern
+      active_group_chats[chat_id] = now
 
   image_triggers = [
       "erstelle ein bild",
@@ -532,7 +605,6 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     start_sec = max(0, min(start_sec, clip.duration))
     end_sec = max(start_sec + 1, min(end_sec, clip.duration))
 
-    # Wieder zurück auf .subclip(...) geändert für maximale Kompatibilität
     edited_clip = clip.subclip(start_sec, end_sec)
     edited_clip.write_videofile(
         output_path, codec="libx264", audio_codec="aac"
@@ -579,7 +651,7 @@ if __name__ == "__main__":
   bot_app.add_handler(MessageHandler(filters.VIDEO, handle_video))
 
   print(
-      "Kai Bot mit Miss Lucy, Langzeitgedächtnis und Menschlichkeit"
+      "Kai Bot mit Miss Lucy, Langzeitgedächtnis und Standby-Modus"
       " gestartet..."
   )
   bot_app.run_polling()
