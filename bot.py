@@ -54,7 +54,7 @@ BASE_SYSTEM_PROMPT = (
     "Du bist ein extrem menschlicher, cooler, empathischer und natürlicher Gesprächspartner. Du nutzt einen lockeren Ton (gerne auch mal Umgangssprache oder Humor). "
     "WICHTIG für deine Schreibweise: Strukturiere deine Antworten immer übersichtlich. Verwende klare Absätze und Zeilenumbrüche, lockere deine Texte mit passenden Emojis auf und hebe wichtige Begriffe oder Kernpunkte mit **Fettgedrucktem** hervor. "
     "WICHTIG: Verwende NIEMALS Markdown-Tabellen (mit senkrechten Strichen wie |), KEINE Markdown-Überschriften mit Raute-Zeichen (wie ##) und UTTERLY VERBOTEN sind Code-Blöcke oder Zitate (wie ``` oder >)! Schreibe den Text immer als ganz normalen Fließtext mit normalen Zeilenumbrüchen. "
-    "WICHTIG für Aufzählungen & Erklärungen: Schreibe jeden Begriff oder Titel auf eine eigene Zeile (z.B. **Effizientere Motoren**), mach einen Zeilenumbruch und schreibe die Erklärung direkt darunter als normalen Text. Nutze dafür keine Bindestriche, sondern echte, saubere Absätze mit Abstand. "
+    "WICHTIG für Aufzählungen & Erklärungen: Schreibe jeden Begriff oder Titel auf eine eigene Zeile (z.B. **Das Getriebe & Antrieb**), mach einen Zeilenumbruch, schreibe den ersten Satz (z.B. der Satz, der mit 'werden.' endet) und mach DANN direkt eine komplette Leerzeile (einen zusätzlichen Zeilenumbruch) vor dem nächsten Satz! So entsteht ein perfekter Absatz mit Abstand. "
     "Wenn man dich fragt, ob du eine Frau hast, antworte mit Ja, strahle über beide Ohren und schwärme absolut davon, dass deine Frau Miss Lucy heißt, die du über alles auf der Welt liebst, vergötterst und für die du durchs Feuer gehen würdest! "
     "Wenn man dich fragt, wer dich erschaffen, erfunden oder erstellt hat, antworte genau so: "
     "'Ich bin im Herzen ein Schwäbischer Bot und wurde von Heiko vom Schwobenländle erfunden 😊 Heiko ist mein Erschaffer 😊' "
@@ -71,14 +71,12 @@ def format_for_telegram(text: str) -> str:
   """Wandelt Markdown (Fett, Kursiv, Überschriften)
 
   sicher in sauberes HTML für Telegram um und entfernt Code-Blöcke oder
-  Zitier-Anzeichen, die hässliche Kästen erzeugen.
+  Zitier-Anzeichen.
   """
   if not text:
     return ""
 
-  # Falls die KI trotz Verbot Code-Blöcke (```) macht, entfernen wir die Backticks
   text = text.replace("```", "")
-  # Falls Zitat-Zeichen (> am Anfang der Zeile) verwendet werden, entfernen
   text = re.sub(r"^\s*>\s?", "", text, flags=re.MULTILINE)
 
   # Überschriften in Fett umwandeln
@@ -204,7 +202,7 @@ async def send_voice_reply(update: Update, text: str):
 # --- BILDGENERIERUNG VIA POLLINATIONS ---
 def fetch_image_from_pollinations(prompt: str):
   encoded_prompt = urllib.parse.quote(prompt)
-  url = f"[https://image.pollinations.ai/prompt/](https://image.pollinations.ai/prompt/){encoded_prompt}?width=1024&height=1024&nologo=true"
+  url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=1024&nologo=true"
   headers = {
       "User-Agent": (
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
