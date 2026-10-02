@@ -386,6 +386,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
       else:
         del active_group_chats[chat_id]
 
+    # Befehl zum manuellen Einleiten des Standby-Modus
     standby_keywords = [
         "geh in standby",
         "gehe in den stand by modus",
@@ -406,15 +407,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
       )
       return
 
+    # Trigger-Wörter zum Aufwecken
     triggers = ["kai", "ki", "bot", "hallo ki", "hallo bot", "hallo ki bot"]
     has_trigger = any(
         re.search(r"\b" + re.escape(trg) + r"\b", lower_text)
         for trg in triggers
     )
 
+    # WICHTIG: Wenn er im Standby ist (is_active == False) UND KEIN Trigger vorkommt,
+    # blockieren wir die Nachricht sofort komplett (er bleibt stumm!).
     if not is_active and not has_trigger:
       return
 
+    # Wenn er entweder aktiv war oder ein Trigger vorkommt, setzen/verlängern wir die Aktivität
     if has_trigger:
       active_group_chats[chat_id] = now
     elif is_active:
@@ -569,7 +574,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ],
         )
         if response.text:
-          response_text = response.text
+          response.text = response.text
           break
       except Exception:
         continue
@@ -655,9 +660,9 @@ if __name__ == "__main__":
   bot_app.add_handler(
       MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message)
   )
-  bot_app.add_handler(MessageHandler(filters.VOICE, handle_voice))
+  bot_app.add_handler(filters.VOICE, handle_voice)
   bot_app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
   bot_app.add_handler(MessageHandler(filters.VIDEO, handle_video))
 
-  print("Kai Bot als universeller Experte gestartet...")
+  print("Kai Bot mit striktem Standby-Modus gestartet...")
   bot_app.run_polling()
