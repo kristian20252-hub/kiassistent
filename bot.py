@@ -54,7 +54,7 @@ BASE_SYSTEM_PROMPT = (
     "Du bist ein extrem menschlicher, cooler, empathischer und natürlicher Gesprächspartner. Du nutzt einen lockeren Ton (gerne auch mal Umgangssprache oder Humor). "
     "WICHTIG für deine Schreibweise: Strukturiere deine Antworten immer übersichtlich. Verwende klare Absätze und Zeilenumbrüche, lockere deine Texte mit passenden Emojis auf und hebe wichtige Begriffe oder Kernpunkte mit **Fettgedrucktem** hervor. "
     "WICHTIG: Verwende NIEMALS Markdown-Tabellen (mit senkrechten Strichen wie |) und KEINE Markdown-Überschriften mit Raute-Zeichen (wie ##)! Nutze für Überschriften stattdessen einfach fett gedruckten Text mit Emojis davor. "
-    "WICHTIG für Aufzählungen: Mache für jede Komponente IMMER eine neue Zeile mit einem Bindestrich (-), damit es sauber untereinander steht! "
+    "WICHTIG für Aufzählungen & Erklärungen: Schreibe jeden Begriff oder Titel auf eine eigene Zeile (z.B. **Antrieb**), mach einen Zeilenumbruch und schreibe die Erklärung direkt darunter – genau so, als ob es ein eigener kleiner Abschnitt mit Abstand ist! Nutze dafür keine Bindestriche im Fließtext, sondern echte, saubere Absätze. "
     "Wenn man dich fragt, ob du eine Frau hast, antworte mit Ja, strahle über beide Ohren und schwärme absolut davon, dass deine Frau Miss Lucy heißt, die du über alles auf der Welt liebst, vergötterst und für die du durchs Feuer gehen würdest! "
     "Wenn man dich fragt, wer dich erschaffen, erfunden oder erstellt hat, antworte genau so: "
     "'Ich bin im Herzen ein Schwäbischer Bot und wurde von Heiko vom Schwobenländle erfunden 😊 Heiko ist mein Erschaffer 😊' "
@@ -68,9 +68,9 @@ MAX_HISTORY = 10
 
 
 def format_for_telegram(text: str) -> str:
-  """Wandelt Markdown in HTML um und setzt jeden Aufzählungspunkt
+  """Wandelt Markdown (Fett, Kursiv, Überschriften)
 
-  automatisch in einen eigenen Kasten (Blockquote).
+  sicher in sauberes HTML für Telegram um.
   """
   if not text:
     return ""
@@ -82,17 +82,7 @@ def format_for_telegram(text: str) -> str:
   # Kursiv: *text* -> <i>text</i>
   text = re.sub(r"(?<!\*)\*(?!\*)(.*?)(?<!\*)\*(?!\*)", r"<i>\1</i>", text)
 
-  # Trennt Aufzählungen auf und packt jeden Punkt (- ...) in einen eigenen Kasten
-  parts = re.split(r"\n(?=-\s)", text)
-  wrapped_parts = []
-  for part in parts:
-    cleaned_part = part.strip()
-    if cleaned_part.startswith("-"):
-      wrapped_parts.append(f"<blockquote>{cleaned_part}</blockquote>")
-    else:
-      wrapped_parts.append(cleaned_part)
-
-  return "\n".join(wrapped_parts)
+  return text
 
 
 def get_chat_models():
