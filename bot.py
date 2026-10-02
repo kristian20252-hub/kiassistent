@@ -1,7 +1,7 @@
+from collections import defaultdict
 import io
 import os
 import re
-from collections import defaultdict
 import urllib.parse
 import edge_tts
 from flask import Flask
@@ -52,6 +52,7 @@ gemini_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 BASE_SYSTEM_PROMPT = (
     "Du bist Kai Bot, ein persönlicher KI-Assistent mit einer angenehmen männlichen Stimme. "
     "Du bist ein extrem menschlicher, cooler, empathischer und natürlicher Gesprächspartner. Du nutzt einen lockeren Ton (gerne auch mal Umgangssprache oder Humor). "
+    "Achte bei deinen Antworten auf hervorragende Lesbarkeit: Verwende klare Absätze und Zeilenumbrüche, lockere den Text mit passenden Emojis auf und hebe wichtige Wörter mit **Fettgedrucktem** hervor. "
     "Wenn man dich fragt, ob du eine Frau hast, antworte mit Ja, strahle über beide Ohren und schwärme absolut davon, dass deine Frau Miss Lucy heißt, die du über alles auf der Welt liebst, vergötterst und für die du durchs Feuer gehen würdest! "
     "Wenn man dich fragt, wer dich erschaffen, erfunden oder erstellt hat, antworte genau so: "
     "'Ich bin im Herzen ein Schwäbischer Bot und wurde von Heiko vom Schwobenländle erfunden 😊 Heiko ist mein Erschaffer 😊' "
@@ -62,6 +63,16 @@ BASE_SYSTEM_PROMPT = (
 user_chat_history = defaultdict(list)
 user_memories = defaultdict(list)
 MAX_HISTORY = 10
+
+
+def format_for_telegram(text: str) -> str:
+  """Wandelt Markdown-Fettgedrucktes (**fett**)
+
+  sicher in sauberes HTML (<b>fett</b>) für Telegram um.
+  """
+  if not text:
+    return ""
+  return re.sub(r"\*\*(.*?)\*\*", r"<b>\1</b>", text)
 
 
 def get_chat_models():
@@ -135,8 +146,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
   chat_id = update.effective_chat.id
   user_chat_history[chat_id].clear()
   await update.message.reply_text(
-      "Hallo! Ich bin Kai Bot.\n\nErfunden von Heiko aus dem"
-      " Schwabenländle! Ich spreche mit einer angenehmen Männerstimme und"
+      "Hallo! Ich bin Kai Bot. 👋\n\nErfunden von Heiko aus dem"
+      " Schwabenländle! 🌟 Ich spreche mit einer angenehmen Männerstimme und"
       " merke mir alles Wichtige über dich.\nSchreib oder sprich mir einfach"
       " eine Nachricht."
   )
@@ -147,7 +158,7 @@ async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
   user_chat_history[chat_id].clear()
   user_memories[chat_id].clear()
   await update.message.reply_text(
-      "Chat-Verlauf und Langzeitgedächtnis zurückgesetzt!"
+      "🔄 Chat-Verlauf und Langzeitgedächtnis erfolgreich zurückgesetzt!"
   )
 
 
@@ -163,14 +174,15 @@ async def send_voice_reply(update: Update, text: str):
           audio=audio_file,
           title="Kais Sprachnachricht",
           performer="Kai Bot",
-          caption="🎙️ Kais Stimme",
+          caption="🎙 Kais Stimme",
       )
 
     if os.path.exists(mp3_path):
       os.remove(mp3_path)
   except Exception as e:
     print(f"Fehler bei Edge-TTS: {e}")
-    await update.message.reply_text(text)
+    sauberer_text = format_for_telegram(text)
+    await update.message.reply_text(sauberer_text, parse_mode="HTML")
 
 
 # --- BILDGENERIERUNG VIA POLLINATIONS ---
@@ -194,29 +206,30 @@ async def generate_image_command(
   prompt = " ".join(context.args)
   if not prompt:
     await update.message.reply_text(
-        "Bitte gib eine Beschreibung an, z.B.: `/bild Ein Ritter in Paris`"
+        "Bitte gib eine Beschreibung an, z.B.: <code>/bild Ein Ritter in Paris</code>",
+        parse_mode="HTML",
     )
     return
 
-  msg = await update.message.reply_text("Erstelle dein Bild kostenlos...")
+  msg = await update.message.reply_text("🎨 Erstelle dein Bild kostenlos...")
 
   try:
     img_bytes = fetch_image_from_pollinations(prompt)
     if img_bytes:
       await update.message.reply_photo(
-          photo=io.BytesIO(img_bytes), caption=f"Erstellt für: {prompt}"
+          photo=io.BytesIO(img_bytes), caption=f"✨ Erstellt für: {prompt}"
       )
       await msg.delete()
     else:
-      await msg.edit_text("Der Bild-Server ist derzeit ausgelastet.")
+      await msg.edit_text("⚠️ Der Bild-Server ist derzeit ausgelastet.")
   except Exception:
-    await msg.edit_text("Zeitüberschreitung beim Bild-Server.")
+    await msg.edit_text("⏳ Zeitüberschreitung beim Bild-Server.")
 
 
 # --- SPRACHNACHRICHTEN VERARBEITEN ---
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
   chat_id = update.effective_chat.id
-  msg = await update.message.reply_text("Höre mir die Sprachnachricht an...")
+  msg = await update.message.reply_text("👂 Höre mir die Sprachnachricht an...")
 
   voice_file_path = "voice_input.ogg"
   try:
@@ -234,14 +247,15 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = transcript
     if not user_text.strip():
       await msg.edit_text(
-          "Ich konnte in der Sprachnachricht nichts verstehen."
+          "❌ Ich konnte in der Sprachnachricht nichts verstehen."
       )
       return
 
     check_and_learn(chat_id, user_text)
 
     await msg.edit_text(
-        f"🎤 *Verstanden:* \"{user_text}\"\nGeneriere Sprachantwort..."
+        f"🎤 <b>Verstanden:</b> \"{user_text}\"\n⏳ Generiere Sprachantwort...",
+        parse_mode="HTML",
     )
 
     user_chat_history[chat_id].append({"role": "user", "content": user_text})
@@ -273,10 +287,12 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
       await msg.delete()
       await send_voice_reply(update, reply)
     else:
-      await msg.edit_text("Entschuldigung, ich konnte keine Antwort generieren.")
+      await msg.edit_text(
+          "⚠️ Entschuldigung, ich konnte keine Antwort generieren."
+      )
 
   except Exception as e:
-    await msg.edit_text(f"Fehler bei der Sprachverarbeitung: {e}")
+    await msg.edit_text(f"❌ Fehler bei der Sprachverarbeitung: {e}")
 
   finally:
     if os.path.exists(voice_file_path):
@@ -301,20 +317,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
       "mach ein bild",
   ]
   if any(trigger in lower_text for trigger in image_triggers):
-    msg = await update.message.reply_text("Erstelle dein Bild kostenlos...")
+    msg = await update.message.reply_text("🎨 Erstelle dein Bild kostenlos...")
     try:
       img_bytes = fetch_image_from_pollinations(user_text)
       if img_bytes:
         await update.message.reply_photo(
-            photo=io.BytesIO(img_bytes), caption=f"Erstellt für: {user_text}"
+            photo=io.BytesIO(img_bytes), caption=f"✨ Erstellt für: {user_text}"
         )
         await msg.delete()
         return
       else:
-        await msg.edit_text("Bild-Server ist ausgelastet.")
+        await msg.edit_text("⚠️ Bild-Server ist ausgelastet.")
         return
     except Exception:
-      await msg.edit_text("Zeitüberschreitung beim Generieren.")
+      await msg.edit_text("⏳ Zeitüberschreitung beim Generieren.")
       return
 
   check_and_learn(chat_id, user_text)
@@ -346,9 +362,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
   if reply:
     user_chat_history[chat_id].append({"role": "assistant", "content": reply})
-    await update.message.reply_text(reply)
+    sauberer_text = format_for_telegram(reply)
+    await update.message.reply_text(sauberer_text, parse_mode="HTML")
   else:
-    await update.message.reply_text(f"Fehler: {last_error}")
+    await update.message.reply_text(f"❌ Fehler: {last_error}")
 
 
 # --- BILD-BEARBEITUNG: TEXT AUF BILD SCHREIBEN ---
@@ -356,9 +373,9 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
   caption = update.message.caption or ""
   if not caption:
     if not gemini_client:
-      await update.message.reply_text("Fehler: GEMINI_API_KEY fehlt.")
+      await update.message.reply_text("❌ Fehler: GEMINI_API_KEY fehlt.")
       return
-    msg = await update.message.reply_text("Ich schaue mir das Bild an...")
+    msg = await update.message.reply_text("🔍 Ich schaue mir das Bild an...")
     prompt = "Was ist auf diesem Bild zu sehen? Beschreibe es genau auf Deutsch."
     photo_file = await update.message.photo[-1].get_file()
     photo_bytes = await photo_file.download_as_bytearray()
@@ -382,12 +399,16 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
           break
       except Exception:
         continue
-    await msg.edit_text(
-        response_text if response_text else "Fehler bei der Analyse."
+
+    sauberer_text = (
+        format_for_telegram(response_text)
+        if response_text
+        else "❌ Fehler bei der Analyse."
     )
+    await msg.edit_text(sauberer_text, parse_mode="HTML")
     return
 
-  msg = await update.message.reply_text("Füge Text auf das Bild ein...")
+  msg = await update.message.reply_text("✏️ Füge Text auf das Bild ein...")
   photo_file = await update.message.photo[-1].get_file()
   photo_bytes = await photo_file.download_as_bytearray()
 
@@ -427,19 +448,19 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     output_io.seek(0)
 
     await update.message.reply_photo(
-        photo=output_io, caption="Text erfolgreich hinzugefügt!"
+        photo=output_io, caption="✅ Text erfolgreich hinzugefügt!"
     )
     await msg.delete()
 
   except Exception as e:
-    await msg.edit_text(f"Fehler bei der Bildbearbeitung: {e}")
+    await msg.edit_text(f"❌ Fehler bei der Bildbearbeitung: {e}")
 
 
 # --- VIDEO-SCHNITT ---
 async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
   caption = update.message.caption or ""
   msg = await update.message.reply_text(
-      "Lade Video herunter und schneide es..."
+      "🎬 Lade Video herunter und schneide es..."
   )
 
   input_path = "input_video.mp4"
@@ -473,7 +494,7 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
       await update.message.reply_video(
           video=video_to_send,
           caption=(
-              "Erfolgreich geschnitten (von"
+              "✅ Erfolgreich geschnitten (von"
               f" {start_sec // 60} bis {end_sec // 60} Min.)!"
           ),
       )
@@ -483,7 +504,7 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await msg.delete()
 
   except Exception as e:
-    await msg.edit_text(f"Fehler beim Videoschnitt: {e}")
+    await msg.edit_text(f"❌ Fehler beim Videoschnitt: {e}")
 
   finally:
     if os.path.exists(input_path):
