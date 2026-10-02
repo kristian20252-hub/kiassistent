@@ -54,7 +54,7 @@ BASE_SYSTEM_PROMPT = (
     "Du bist ein extrem menschlicher, cooler, empathischer und natürlicher Gesprächspartner. Du nutzt einen lockeren Ton (gerne auch mal Umgangssprache oder Humor). "
     "WICHTIG für deine Schreibweise: Strukturiere deine Antworten immer übersichtlich. Verwende klare Absätze und Zeilenumbrüche, lockere deine Texte mit passenden Emojis auf und hebe wichtige Begriffe oder Kernpunkte mit **Fettgedrucktem** hervor. "
     "WICHTIG: Verwende NIEMALS Markdown-Tabellen (mit senkrechten Strichen wie |) und KEINE Markdown-Überschriften mit Raute-Zeichen (wie ##)! Nutze für Überschriften stattdessen einfach fett gedruckten Text mit Emojis davor. "
-    "WICHTIG für Aufzählungen: Wenn du Unterpunkte, Bestandteile oder Kategorien auflistest (wie beim Fahrwerk, Antrieb oder Innenraum), mache für jede Komponente IMMER eine neue Zeile mit einem Bindestrich (-) oder einer Nummerierung, damit es sauber untereinander steht und kein langer Fließtext wird! "
+    "WICHTIG für Aufzählungen: Mache für jede Komponente IMMER eine neue Zeile mit einem Bindestrich (-), damit es sauber untereinander steht! "
     "Wenn man dich fragt, ob du eine Frau hast, antworte mit Ja, strahle über beide Ohren und schwärme absolut davon, dass deine Frau Miss Lucy heißt, die du über alles auf der Welt liebst, vergötterst und für die du durchs Feuer gehen würdest! "
     "Wenn man dich fragt, wer dich erschaffen, erfunden oder erstellt hat, antworte genau so: "
     "'Ich bin im Herzen ein Schwäbischer Bot und wurde von Heiko vom Schwobenländle erfunden 😊 Heiko ist mein Erschaffer 😊' "
@@ -67,6 +67,19 @@ user_memories = defaultdict(list)
 MAX_HISTORY = 10
 
 
+def force_newlines(text: str) -> str:
+  """Zwingt den Bot dazu, vor Aufzählungspunkten (z.B. - Karosserie:)
+
+  immer einen sauberen Zeilenumbruch zu machen, falls das Modell sie in einer
+  Zeile verschluckt hat.
+  """
+  if not text:
+    return ""
+  # Sichert ab, dass ein Bindestrich mit einem Wort direkt nach einem Punkt/Leerzeichen eine neue Zeile bekommt
+  text = re.sub(r"(?<=\w)\s+-\s+(?=[A-ZÄÖÜ])", r"\n- ", text)
+  return text
+
+
 def format_for_telegram(text: str) -> str:
   """Wandelt Markdown (Überschriften, Fett, Kursiv)
 
@@ -74,6 +87,7 @@ def format_for_telegram(text: str) -> str:
   """
   if not text:
     return ""
+  text = force_newlines(text)
   # Überschriften (## Text) in Fett umwandeln
   text = re.sub(r"^#{1,6}\s*(.*?)$", r"\n<b>📌 \1</b>\n", text, flags=re.MULTILINE)
   # Fett: **text** -> <b>text</b>
@@ -299,7 +313,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
       await send_voice_reply(update, reply)
     else:
       await msg.edit_text(
-          "⚠️ Entschuldigung, ich konnte keine Antwort generieren."
+          "⚠️️ Entschuldigung, ich konnte keine Antwort generieren."
       )
 
   except Exception as e:
@@ -422,7 +436,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await msg.edit_text(sauberer_text, parse_mode="HTML")
     return
 
-  msg = await update.message.reply_text("✏️ Füge Text auf das Bild ein...")
+  msg = await update.message.reply_text("✏️️ Füge Text auf das Bild ein...")
   photo_file = await update.message.photo[-1].get_file()
   photo_bytes = await photo_file.download_as_bytearray()
 
